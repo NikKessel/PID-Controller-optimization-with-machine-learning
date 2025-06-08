@@ -18,7 +18,7 @@ df_good = df[df["Label"] == "good"].copy()
 features = ["K", "T1", "T2", "Td"]
 targets = ["Kp", "Ki", "Kd"]
 
-X = df_good[features].fillna(0)   # NaNs → 0
+X = df_good[features].fillna(0)
 y = df_good[targets]
 
 # === 3. Train/Test Split ===
@@ -66,7 +66,7 @@ joblib.dump(model, os.path.join(output_dir, "rf_pid_model.pkl"))
 # Save metrics
 metrics_df.to_csv(os.path.join(output_dir, "rf_performance_metrics.csv"))
 
-# Save residual plot
+# Save residual plot for Kp
 plt.savefig(os.path.join(output_dir, "residual_plot_kp.png"))
 
 # Save test predictions
@@ -118,3 +118,13 @@ axes[1].grid(True)
 
 plt.tight_layout()
 plt.savefig(os.path.join(output_dir, "residual_plots_ki_kd.png"))
+
+# === 12. Feature Importance Plot ===
+importances = model.estimators_[0].feature_importances_
+plt.figure(figsize=(6, 4))
+plt.bar(features, importances)
+plt.title("Feature Importance (First Tree)")
+plt.ylabel("Importance")
+plt.grid(True)
+plt.tight_layout()
+plt.savefig(os.path.join(output_dir, "feature_importance_rf.png"))
