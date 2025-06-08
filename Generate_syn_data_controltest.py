@@ -11,6 +11,11 @@ num_samples = 100  # how many systems to generate
 output_csv_path = r"D:\BA\PID-Controller-optimization-with-machine-learning\pid_dataset_control.csv"
 plot_output_dir = r"D:\BA\PID-Controller-optimization-with-machine-learning\plots\visul_syn_data"
 os.makedirs(plot_output_dir, exist_ok=True)
+# === Create subfolders for labeled plots ===
+label_categories = ["good", "slow", "overshoot", "unstable"]
+for cat in label_categories:
+    os.makedirs(os.path.join(plot_output_dir, cat), exist_ok=True)
+
 
 # === TRANSFER FUNCTION GENERATOR ===
 def generate_transfer_function(type_name, sprunghoehe_target, sprungzeit_target):
@@ -67,7 +72,7 @@ def simulate_and_extract(num, den, Kp, Ki, Kd):
     C = Kp + Ki / s + Kd * s
     T = feedback(C * G, 1)
 
-    t, y = step_response(T, T=np.linspace(0, 100, 1000))
+    t, y = step_response(T, T=np.linspace(0, 200, 2000))
     w = np.ones_like(t)
     e = w - y
     dt = t[1] - t[0]
@@ -94,6 +99,32 @@ def simulate_and_extract(num, den, Kp, Ki, Kd):
         "tu": tu,
         "overshoot": overshoot
     }
+def classify_sample(y, u, tg, tu):
+    try:
+        # Check for simulation instability
+        if (
+            np.any(np.isnan(y)) or np.any(np.isnan(u)) or
+            np.any(np.isinf(y)) or np.any(np.isinf(u)) or
+            np.isnan(tg) or np.isnan(tu)
+        ):
+            return "unstable"
+
+        y_final = y[-1]
+        overshoot_pct = (np.max(y) - y_final) / max(1e-6, y_final)
+
+        # Overshoot label
+        if overshoot_pct > 1.0:
+            return "overshoot"
+
+        # Slow label (rise time too long or doesn’t reach near setpoint)
+        if y_final < 0.95 or y_final > 1.05 or tg > 60:
+            return "slow"
+
+        # All criteria met → good
+        return "good"
+
+    except:
+        return "unstable"
 
 # === MAIN GENERATION LOOP ===
 sample_data = []
@@ -111,6 +142,7 @@ for i in range(num_samples):
 
     try:
         sim_data = simulate_and_extract(num, den, Kp, Ki, Kd)
+        label = classify_sample(sim_data["y"], sim_data["u"], sim_data["tg"], sim_data["tu"])
 
         # Store scalar values
         row = {
@@ -120,7 +152,8 @@ for i in range(num_samples):
             "Kd": Kd,
             "Tu": sim_data["tu"],
             "Tg": sim_data["tg"],
-            "Overshoot": sim_data["overshoot"]
+            "Overshoot": sim_data["overshoot"],
+            "Label": label
         }
         sample_data.append(row)
 
@@ -134,7 +167,29 @@ for i in range(num_samples):
         plt.ylabel("Output")
         plt.legend()
         plt.tight_layout()
-        plt.savefig(os.path.join(plot_output_dir, f"sample_{i}.png"))
+        # Save plot with label in filename and subfolder
+        filename = f"sample_{i}_{label}.png"
+        label_dir = os.path.join(plot_output_dir, label)
+        save_path = os.path.join(label_dir, filename)
+        plt.savefig(save_path)
+        # Optional: Save plot
+        plt.figure(figsize=(6, 4))
+        plt.plot(sim_data["t"], sim_data["w"], 'k--', label='w(t)')
+        plt.plot(sim_data["t"], sim_data["y"], 'b', label='y(t)')
+        plt.plot(sim_data["t"], sim_data["u"], 'r', label='u(t)')
+        plt.title(f"Sample {i} - Label: {label}")
+        plt.xlabel("Time [s]")
+        plt.ylabel("Output / Control")
+        plt.legend()
+        plt.tight_layout()
+
+        # Save plot to subfolder by label
+        filename = f"sample_{i}_{label}.png"
+        label_dir = os.path.join(plot_output_dir, label)
+        save_path = os.path.join(label_dir, filename)
+        plt.savefig(save_path)
+        plt.close()
+
         plt.close()
 
     except Exception as e:
