@@ -3,11 +3,10 @@ import pandas as pd
 import random
 import matplotlib.pyplot as plt
 import os
-
 from control import tf, feedback, step_response
 
 # === CONFIG ===
-num_samples = 100  # how many systems to generate
+num_samples = 1000  # how many systems to generate
 output_csv_path = r"D:\BA\PID-Controller-optimization-with-machine-learning\pid_dataset_control.csv"
 plot_output_dir = r"D:\BA\PID-Controller-optimization-with-machine-learning\plots\visul_syn_data"
 os.makedirs(plot_output_dir, exist_ok=True)
