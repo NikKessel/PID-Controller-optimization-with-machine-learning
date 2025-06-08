@@ -79,3 +79,42 @@ cv = KFold(n_splits=5, shuffle=True, random_state=42)
 rf_cv_model = RandomForestRegressor(n_estimators=100, random_state=42)
 cv_scores_kp = cross_val_score(rf_cv_model, X, y["Kp"], cv=cv, scoring="r2")
 print(f"Cross-Validation R² (Kp): {cv_scores_kp.mean():.3f} ± {cv_scores_kp.std():.3f}")
+
+# === 10. True vs Predicted Plot for All ===
+fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+for i, param in enumerate(["Kp", "Ki", "Kd"]):
+    axes[i].scatter(y_test.iloc[:, i], y_pred[:, i], alpha=0.6)
+    axes[i].plot([y_test.iloc[:, i].min(), y_test.iloc[:, i].max()],
+                 [y_test.iloc[:, i].min(), y_test.iloc[:, i].max()],
+                 'r--', label='Ideal')
+    axes[i].set_xlabel(f"True {param}")
+    axes[i].set_ylabel(f"Predicted {param}")
+    axes[i].set_title(f"True vs. Predicted {param}")
+    axes[i].legend()
+    axes[i].grid(True)
+
+plt.tight_layout()
+plt.savefig(os.path.join(output_dir, "true_vs_predicted_all.png"))
+
+# === 11. Residual Plots for Ki and Kd ===
+residuals_ki = y_test["Ki"] - y_pred[:, 1]
+residuals_kd = y_test["Kd"] - y_pred[:, 2]
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+axes[0].scatter(y_test["Ki"], residuals_ki, alpha=0.6)
+axes[0].axhline(0, color='r', linestyle='--')
+axes[0].set_xlabel("True Ki")
+axes[0].set_ylabel("Residual (True - Predicted)")
+axes[0].set_title("Residual Plot for Ki")
+axes[0].grid(True)
+
+axes[1].scatter(y_test["Kd"], residuals_kd, alpha=0.6)
+axes[1].axhline(0, color='r', linestyle='--')
+axes[1].set_xlabel("True Kd")
+axes[1].set_ylabel("Residual (True - Predicted)")
+axes[1].set_title("Residual Plot for Kd")
+axes[1].grid(True)
+
+plt.tight_layout()
+plt.savefig(os.path.join(output_dir, "residual_plots_ki_kd.png"))
