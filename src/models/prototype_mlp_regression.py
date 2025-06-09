@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import os
 import joblib
 from datetime import datetime
-
 from sklearn.model_selection import train_test_split, KFold, cross_val_score
 from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
@@ -13,10 +12,10 @@ from sklearn.multioutput import MultiOutputRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 # === 1. Load and prepare data ===
-df = pd.read_csv(r"D:/BA/PID-Controller-optimization-with-machine-learning/pid_dataset_control.csv")
+df = pd.read_csv(r"D:\BA\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv")
 df = df[df["Label"] == "good"].copy()
 
-core_features = ["K", "T1", "T2", "Td", "Tu", "Tg", "Overshoot"]
+core_features = ["K", "T1", "T2", "Td", "Tu", "Tg", "sprunghoehe_target"]
 type_features = [col for col in df.columns if col.startswith("type_")]
 features = core_features + type_features
 targets = ["Kp", "Ki", "Kd"]
