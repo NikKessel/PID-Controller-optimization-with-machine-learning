@@ -73,7 +73,7 @@ Three ML-based models are developed:
 
 ---
 
-## 📁 Project Structure (suggested)
+## 📁 Project Structure
 
 ```
 PID-Controller-optimization/
