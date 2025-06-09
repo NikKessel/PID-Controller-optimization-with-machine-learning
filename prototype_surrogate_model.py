@@ -50,15 +50,26 @@ def compute_ise(K, T1, T2, Td, Tu, Tg, Kp, Ki, Kd):
 print("Computing ISE values for each row...")
 df["ISE"] = df.apply(lambda row: compute_ise(row.K, row.T1, row.T2, row.Td, row.Tu, row.Tg, row.Kp, row.Ki, row.Kd), axis=1)
 df["ISE"] = df["ISE"].clip(lower=0, upper=10000)  # Remove extreme outliers
+print("ISE value statistics:")
+print(df["ISE"].describe())
+print("Any negative ISE values?:", (df["ISE"] < 0).any())
+
 # Optional: Log transform
 df["ISE"] = np.log1p(df["ISE"])
+print("ISE value statistics:")
+print(df["ISE"].describe())
+print("Any negative ISE values?:", (df["ISE"] < 0).any())
 
 # === 3. Define features and target ===
 features = ["K", "T1", "T2", "Td", "Tu", "Tg", "Kp", "Ki", "Kd"] + list(type_dummies.columns)
 target = "ISE"
+print("Features used for training:", features)
 
 X = df[features]
 y = df[target]
+
+print("Feature columns in X:")
+print(X.columns.tolist())
 
 # === 4. Train/test split ===
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
