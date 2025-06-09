@@ -110,7 +110,7 @@ python src/evaluation/compare_to_chr.py
 
 ## 🛠 Technologies Used
 
-- Python 3.10+
+- Python 3.12+
 - NumPy, SciPy, Pandas
 - scikit-learn, XGBoost, MLPRegressor
 - DEAP (Genetic Algorithms)

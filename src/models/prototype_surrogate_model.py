@@ -10,7 +10,7 @@ from datetime import datetime
 from control.matlab import tf, feedback, step
 
 # === 1. Load and preprocess dataset (only 'good' labels) ===
-df = pd.read_csv(r"D:\BA\PID-Controller-optimization-with-machine-learning\pid_dataset_control.csv")
+df = pd.read_csv(r"D:\BA\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv")
 df = df[df["Label"] == "good"].copy()  # Filter for good responses only
 df = df.dropna(subset=["K", "T1", "Tu", "Tg", "Kp", "Ki", "Kd"])
 
@@ -50,6 +50,7 @@ def compute_ise(K, T1, T2, Td, Tu, Tg, Kp, Ki, Kd):
 print("Computing ISE values for each row...")
 df["ISE"] = df.apply(lambda row: compute_ise(row.K, row.T1, row.T2, row.Td, row.Tu, row.Tg, row.Kp, row.Ki, row.Kd), axis=1)
 df["ISE"] = df["ISE"].clip(lower=0, upper=10000)  # Remove extreme outliers
+df = df[df["ISE"] > 0.0]  # ⬅️ This line excludes zero ISE entries
 print("ISE value statistics:")
 print(df["ISE"].describe())
 print("Any negative ISE values?:", (df["ISE"] < 0).any())
@@ -60,8 +61,52 @@ print("ISE value statistics:")
 print(df["ISE"].describe())
 print("Any negative ISE values?:", (df["ISE"] < 0).any())
 
+def compute_rise_time_and_ss_error(K, T1, T2, Td, Tu, Tg, Kp, Ki, Kd):
+    num = [K]
+    den = [1]
+    if T2 > 0:
+        den = np.convolve([T1, 1], [T2, 1])
+    else:
+        den = [T1, 1]
+    plant = tf(num, den)
+    if Td > 0:
+        plant = plant * tf([Td, 1], [1])
+    if Tu > 0:
+        plant = plant * tf([1], [Tu, 1])
+    if Tg > 0:
+        plant = plant * tf([1], [Tg, 1])
+    
+    pid = tf([Kd, Kp, Ki], [1, 0])
+    closed_loop = feedback(pid * plant, 1)
+    t = np.linspace(0, 50, 500)
+    t, y = step(closed_loop, T=t)
+
+    # Rise time (time from 10% to 90% of final value)
+    y_final = y[-1]
+    y_10 = 0.1 * y_final
+    y_90 = 0.9 * y_final
+    try:
+        t_rise_start = next(t[i] for i in range(len(y)) if y[i] >= y_10)
+        t_rise_end = next(t[i] for i in range(len(y)) if y[i] >= y_90)
+        rise_time = t_rise_end - t_rise_start
+    except StopIteration:
+        rise_time = 50  # max time if response too slow
+
+    # Steady-state error
+    ss_error = abs(1 - y[-1])
+    return rise_time, ss_error
+
+# Compute and add to DataFrame
+print("Computing rise time and steady-state error...")
+df[["rise_time", "ss_error"]] = df.apply(
+    lambda row: pd.Series(compute_rise_time_and_ss_error(
+        row.K, row.T1, row.T2, row.Td, row.Tu, row.Tg,
+        row.Kp, row.Ki, row.Kd
+    )), axis=1)
+
+
 # === 3. Define features and target ===
-features = ["K", "T1", "T2", "Td", "Tu", "Tg", "Kp", "Ki", "Kd"] + list(type_dummies.columns)
+features = ["K", "T1", "T2", "Td", "Tu", "Tg", "Kp", "Ki", "Kd", "rise_time", "ss_error"] + list(type_dummies.columns)
 target = "ISE"
 print("Features used for training:", features)
 
@@ -111,5 +156,7 @@ joblib.dump(mlp, os.path.join(output_dir, "mlp_surrogate_model.pkl"))
 # Save metrics
 with open(os.path.join(output_dir, "metrics.txt"), "w") as f:
     f.write(f"MAE: {mae}\nMSE: {mse}\nR²: {r2}\n")
+# Save the full dataset with computed ISE values
+df.to_csv(os.path.join(output_dir, "surrogate_training_data_with_ise.csv"), index=False)
 
 print(f"Model and results saved in {output_dir}")
