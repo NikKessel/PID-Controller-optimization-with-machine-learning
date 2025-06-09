@@ -64,15 +64,11 @@ def predict_ise_from_pid(params):
     return pred_ise  # Do not clip negative values
 
 # === 4. Optimize PID parameters using Differential Evolution ===
-param_bounds = [(0, 10), (0, 10), (0, 5)]  # Bounds for Kp, Ki, Kd
+param_bounds = [(0.1, 5), (0.01, 2), (0, 1)]  # Bounds for Kp, Ki, Kd
 result = differential_evolution(predict_ise_from_pid, param_bounds, strategy='best1bin', maxiter=50, popsize=20, tol=1e-6, seed=42)
 
 Kp_opt, Ki_opt, Kd_opt = result.x
-print("\nOptimal PID parameters:")
-print(f"Kp: {Kp_opt:.4f}, Ki: {Ki_opt:.4f}, Kd: {Kd_opt:.4f}")
-print(f"Predicted ISE: {result.fun:.4f}")
 
-print(f"Final Tu used: {Tu:.4f}, Final Tg used: {Tg:.4f}")
 print("\n=== Summary ===")
 print(f"Used Tu: {Tu:.4f}")
 print(f"Used Tg: {Tg:.4f}")
