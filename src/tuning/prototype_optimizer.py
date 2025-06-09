@@ -12,8 +12,28 @@ def estimate_tu_tg(K, T1, T2, Td):
     estimated_tg = 0.6 * (T1 + T2 + Td)
     return estimated_tu, estimated_tg
 
+# === Helper function to simulate response and extract metrics ===
+def simulate_metrics(K, T1, T2, Td, Kp, Ki, Kd):
+    s = tf([1, 0], [1])
+    if T2 > 0:
+        plant = tf([K], [T1*T2, T1+T2, 1])
+    else:
+        plant = tf([K], [T1, 1])
+    if Td > 0:
+        D_tf = tf([Kd * Td, Kd], [1])
+    else:
+        D_tf = tf([Kd], [1])
+    I_tf = tf([Ki], [1, 0]) if Ki > 0 else 0
+    P_tf = tf([Kp], [1])
+    PID = P_tf + I_tf + D_tf
+    sys_cl = feedback(PID * plant, 1)
+    t, y = step(sys_cl, np.linspace(0, 100, 1000))
+    rise_time = t[next(i for i, val in enumerate(y) if val >= 0.9)] if any(val >= 0.9 for val in y) else 100
+    ss_error = abs(1 - y[-1])
+    return rise_time, ss_error
+
 # === 1. Load surrogate model ===
-model_path = r"D:\BA\PID-Controller-optimization-with-machine-learning\models\surrogate\surrogate_model_20250609_115604\mlp_surrogate_model.pkl"
+model_path = r"D:\BA\PID-Controller-optimization-with-machine-learning\models\surrogate\surrogate_model_20250609_122155\mlp_surrogate_model.pkl"
 surrogate_model = joblib.load(model_path)
 
 # === 2. Prompt user for plant parameters ===
@@ -47,8 +67,10 @@ else:
 # === 3. Define cost function using surrogate model ===
 def predict_ise_from_pid(params):
     Kp, Ki, Kd = params
+    rise_time, ss_error = simulate_metrics(K, T1, T2, Td, Kp, Ki, Kd)
     input_vec = np.array([
         K, T1, T2, Td, Tu, Tg, Kp, Ki, Kd,
+        rise_time, ss_error,
         type_encoding["type_PT1"],
         type_encoding["type_PT1+Td"],
         type_encoding["type_PT2"],
@@ -58,7 +80,7 @@ def predict_ise_from_pid(params):
     return pred_ise
 
 # === 4. Optimize PID parameters ===
-param_bounds = [(0.1, 10), (0.01, 10), (0, 2)]
+param_bounds = [(0, 10), (0, 10), (0, 5)]
 result = differential_evolution(predict_ise_from_pid, param_bounds, strategy='best1bin', maxiter=50, popsize=20, tol=1e-6, seed=42)
 Kp_opt, Ki_opt, Kd_opt = result.x
 print("\nOptimal PID parameters:")
