@@ -6,7 +6,8 @@ from scipy.optimize import differential_evolution
 from control.matlab import tf, feedback, step
 import matplotlib.pyplot as plt
 from functools import partial
-
+import os
+from datetime import datetime
 
 # === Helper function to estimate Tu and Tg if missing ===
 def estimate_tu_tg(K, T1, T2, Td):
@@ -59,37 +60,40 @@ def cost_from_pid(params, plant_params, surrogate_model, weights=None):
         }])
 
         prediction = surrogate_model.predict(input_df)[0]
-        ise, overshoot, settling, rise = prediction
 
-        cost = (weights[0] * ise +
-                weights[1] * overshoot +
-                weights[2] * settling +
-                weights[3] * rise)
-        return cost
+        # Check for physically invalid values
+        if any(x < 0 or np.isnan(x) for x in prediction):
+            print(f"⚠️ Invalid prediction discarded (values: {prediction}) for PID: Kp={Kp:.3f}, Ki={Ki:.3f}, Kd={Kd:.3f}")
+            return [1e6, 1e6, 1e6, 1e6]
+
+        # Valid result → log and return
+        print(f"PID: Kp={Kp:.3f}, Ki={Ki:.3f}, Kd={Kd:.3f} → Predicted ISE={prediction[0]:.2f}, OS={prediction[1]:.2f}, ST={prediction[2]:.2f}, RT={prediction[3]:.2f}")
+        return prediction
+
 
     except Exception as e:
         print("❌ Error in cost_from_pid:", e)
-        return 1e6  # high penalty for invalid point
+        return [1e6, 1e6, 1e6, 1e6]  # high penalties
 
 # === 4. Optimize PID parameters ===
+def cost_only(params):
+    ise, overshoot, settling_time, rise_time = cost_from_pid(params, plant_params, surrogate_model)
+    return 0.4 * ise + 0.2 * overshoot + 0.2 * settling_time + 0.2 * rise_time
+
 plant_params = (K, T1, T2, Td, Tu, Tg, type_str)
-cost_fn = partial(cost_from_pid, plant_params=plant_params, surrogate_model=surrogate_model)
 param_bounds = [(0.1, 10), (0.01, 10), (0, 2)]
-result = differential_evolution(cost_fn, param_bounds, strategy='best1bin', maxiter=50, popsize=20, tol=1e-6, seed=42)
+result = differential_evolution(cost_only, param_bounds, strategy='best1bin', maxiter=50, popsize=20, tol=1e-6, seed=42)
 Kp_opt, Ki_opt, Kd_opt = result.x
-print("\nOptimal PID parameters:")
-print(f"Kp: {Kp_opt:.4f}, Ki: {Ki_opt:.4f}, Kd: {Kd_opt:.4f}")
-print(f"Predicted cost: {result.fun:.4f}")
-print(f"Final Tu used: {Tu:.4f}, Final Tg used: {Tg:.4f}")
 
-# === 5. Visualization: ISE vs Kp ===
+# === 5. Create timestamped export folder ===
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+export_dir = os.path.join("D:/BA/PID-Controller-optimization-with-machine-learning/results", f"run_{timestamp}")
+os.makedirs(export_dir, exist_ok=True)
+
+# === 6. Plot ISE vs Kp ===
 kp_range = np.linspace(0.1, 10, 100)
-ise_values = []
-for kp in kp_range:
-    ise = cost_from_pid([kp, Ki_opt, Kd_opt], plant_params, surrogate_model, weights=[1, 0, 0, 0])
-    ise_values.append(ise)
-
-plt.figure(figsize=(8, 4))
+ise_values = [cost_from_pid([kp, Ki_opt, Kd_opt], plant_params, surrogate_model)[0] for kp in kp_range]
+plt.figure()
 plt.plot(kp_range, ise_values, label="Predicted ISE")
 plt.xlabel("Kp")
 plt.ylabel("ISE")
@@ -97,39 +101,53 @@ plt.title("ISE vs Kp (Ki, Kd fixed)")
 plt.grid(True)
 plt.legend()
 plt.tight_layout()
+plt.savefig(os.path.join(export_dir, "ise_vs_kp.png"))
 plt.show()
 
-# === 6. Numerical gradients around optimum ===
-def estimate_gradient(pid):
-    delta = 1e-2
-    base = cost_from_pid(pid, plant_params, surrogate_model, weights=[1, 0, 0, 0])
-    grad = []
-    for i in range(3):
-        shift = pid.copy()
-        shift[i] += delta
-        grad_val = (cost_from_pid(shift, plant_params, surrogate_model, weights=[1, 0, 0, 0]) - base) / delta
-        grad.append(grad_val)
-    return grad
+# === 7. Plot Overshoot and Settling Time vs Kp ===
+overshoot_values = [cost_from_pid([kp, Ki_opt, Kd_opt], plant_params, surrogate_model)[1] for kp in kp_range]
+settling_values = [cost_from_pid([kp, Ki_opt, Kd_opt], plant_params, surrogate_model)[2] for kp in kp_range]
 
-grad_kp, grad_ki, grad_kd = estimate_gradient([Kp_opt, Ki_opt, Kd_opt])
-print("\nGradient Sensitivity near optimum:")
-print(f"dISE/dKp: {grad_kp:.4f}, dISE/dKi: {grad_ki:.4f}, dISE/dKd: {grad_kd:.4f}")
+plt.figure()
+plt.plot(kp_range, overshoot_values, label="Overshoot")
+plt.plot(kp_range, settling_values, label="Settling Time")
+plt.xlabel("Kp")
+plt.ylabel("Metric Value")
+plt.title("Overshoot and Settling Time vs Kp")
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
+plt.savefig(os.path.join(export_dir, "overshoot_settling_vs_kp.png"))
+plt.show()
 
-# === 7. Distribution of predicted ISE in optimization ===
+# === 8. Distribution of ISE ===
 pop_samples = np.random.uniform([0, 0, 0], [10, 10, 5], size=(1000, 3))
-pred_ises = [cost_from_pid(p, plant_params, surrogate_model, weights=[1, 0, 0, 0]) for p in pop_samples]
-
-plt.figure(figsize=(6, 4))
+pred_ises = [cost_from_pid(p, plant_params, surrogate_model)[0] for p in pop_samples]
+plt.figure()
 plt.hist(pred_ises, bins=30, color='steelblue', edgecolor='k')
 plt.title("Distribution of Surrogate-Predicted ISE")
 plt.xlabel("ISE")
 plt.ylabel("Frequency")
 plt.tight_layout()
-plt.savefig("ise_distribution_histogram.png")
+plt.savefig(os.path.join(export_dir, "ise_distribution_histogram.png"))
 plt.show()
 
-# === 8. Final Output ===
+# === 9. Save results ===
+ise, overshoot, settling_time, rise_time = cost_from_pid([Kp_opt, Ki_opt, Kd_opt], plant_params, surrogate_model)
+with open(os.path.join(export_dir, "summary.txt"), "w") as f:
+    f.write(f"Optimal PID parameters:\n")
+    f.write(f"Kp: {Kp_opt:.4f}, Ki: {Ki_opt:.4f}, Kd: {Kd_opt:.4f}\n")
+    f.write(f"Predicted ISE: {ise:.4f}\n")
+    f.write(f"Overshoot: {overshoot:.4f}\n")
+    f.write(f"Settling Time: {settling_time:.4f}\n")
+    f.write(f"Rise Time: {rise_time:.4f}\n")
+    f.write(f"Cost: {result.fun:.4f}\n")
+    f.write(f"Final Tu used: {Tu:.4f}, Final Tg used: {Tg:.4f}\n")
+
+# === 10. Console output ===
 print("\nOptimal PID parameters:")
 print(f"Kp: {Kp_opt:.4f}, Ki: {Ki_opt:.4f}, Kd: {Kd_opt:.4f}")
-print(f"Predicted ISE: {result.fun:.4f}")
+print(f"Predicted ISE: {ise:.4f}")
+print(f"Overshoot: {overshoot:.4f}, Settling Time: {settling_time:.4f}, Rise Time: {rise_time:.4f}")
 print(f"Final Tu used: {Tu:.4f}, Final Tg used: {Tg:.4f}")
+print(f"Results saved to: {export_dir}")
