@@ -7,7 +7,7 @@ from control import tf, feedback, step_response
 from control.matlab import pade
 
 # === CONFIG ===
-num_samples = 1000  # how many systems to generate
+num_samples = 10000  # how many systems to generate
 output_csv_path = r"D:\BA\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv"
 plot_dir = r"D:\BA\PID-Controller-optimization-with-machine-learning\plots\visul_syn_data"
 plot_output_dir = r"D:\BA\PID-Controller-optimization-with-machine-learning\plots\visul_syn_data"
