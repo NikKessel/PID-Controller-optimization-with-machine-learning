@@ -1,101 +1,84 @@
+# Full updated script using MLPRegressor with preprocessing and one-hot encoding
 import pandas as pd
 import numpy as np
-from control.matlab import tf, feedback, step, pade, series
-import ast
-from tqdm import tqdm
-
-
-def evaluate_step_response_metrics(num, den, Kp, Ki, Kd, Td=0.0, t_end=200, n_points=1000, setpoint=1.0):
-    try:
-        print("=== Starting Metric Evaluation ===")
-
-        # --- 1. Build G(s) ---
-        G_nom = tf(num, den)
-        print(f"Original G_nom(s): {G_nom}")
-
-        if Td > 0:
-            delay_num, delay_den = pade(Td, 4)
-            G_delay = tf(delay_num, delay_den)
-            G = series(G_nom, G_delay)
-            print(f"Delay Td = {Td} applied with Padé: {G_delay}")
-        else:
-            G = G_nom
-            print("No delay applied.")
-
-        print(f"Final G(s): {G}")
-
-        # --- 2. Build PID(s) ---
-        s = tf([1, 0], [1])
-        PID = Kp + Ki / s + Kd * s
-        print(f"PID(s): {PID}")
-
-        # --- 3. Closed-loop system ---
-        sys_cl = feedback(PID * G, 1)
-        print(f"Closed-loop TF: {sys_cl}")
-
-        # --- 4. Simulate step response ---
-        t = np.linspace(0, t_end, n_points)
-        t_out, y_out = step(sys_cl, T=t)
-        print(f"Step response simulated, final y = {y_out[-1]}")
-
-        # --- 5. Compute error ---
-        e = setpoint - y_out
-
-        # --- 6. Metrics ---
-        ise = np.trapz(e**2, t_out)
-        print(f"ISE = {ise}")
-
-        sse = abs(setpoint - y_out[-1])
-        print(f"SSE = {sse}")
-
-        overshoot = max(y_out) - setpoint
-        print(f"Overshoot = {overshoot}")
-
-        settling_idx = np.where(np.abs(e) < 0.02)[0]
-        settling_time = t_out[settling_idx[-1]] if len(settling_idx) > 0 else t_out[-1]
-        print(f"Settling Time = {settling_time}")
-
-        try:
-            rt_start = np.where(y_out >= 0.1 * setpoint)[0][0]
-            rt_end = np.where(y_out >= 0.9 * setpoint)[0][0]
-            rise_time = t_out[rt_end] - t_out[rt_start]
-        except:
-            rise_time = np.nan
-        print(f"Rise Time = {rise_time}")
-
-        return ise, overshoot, settling_time, sse, rise_time
-
-    except Exception as e:
-        print(f"❌ Exception during evaluation: {e}")
-        return np.nan, np.nan, np.nan, np.nan, np.nan
+from sklearn.multioutput import MultiOutputRegressor
+from sklearn.neural_network import MLPRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, r2_score
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.impute import SimpleImputer
+import joblib
+import matplotlib.pyplot as plt
 
 # Load dataset
-df = pd.read_csv(r"D:\BA\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv")
-df = df[df["Label"] == "good"].copy()
+file_path = r"D:\BA\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv"
+df = pd.read_csv(file_path)
 
-# Initialize result columns
-df["ISE"] = np.nan
-df["SSE"] = np.nan
-df["SettlingTime"] = np.nan
-df["RiseTime"] = np.nan
+# Filter for valid and labeled as "good"
+df_clean = df[df["Label"] == "good"].copy()
+target_cols = ["ISE", "Overshoot", "SettlingTime", "SSE", "RiseTime"]
+df_clean = df_clean.dropna(subset=target_cols)
 
-# Process each row
-for idx, row in tqdm(df.iterrows(), total=len(df)):
-    try:
-        num = ast.literal_eval(row["num"])
-        den = ast.literal_eval(row["den"])
-        Kp, Ki, Kd = row["Kp"], row["Ki"], row["Kd"]
+# Features
+numeric_features = ["K", "T1", "T2", "Td", "Tu", "Tg", "Kp", "Ki", "Kd"]
+categorical_features = ["type"]
+all_features = numeric_features + categorical_features
+X = df_clean[all_features]
+Y = df_clean[target_cols]
 
-        ise, overshoot, settling_time, sse, rise_time = evaluate_step_response_metrics(num, den, Kp, Ki, Kd)
-        df.at[idx, "ISE"] = ise
-        df.at[idx, "Overshoot"] = overshoot
-        df.at[idx, "SettlingTime"] = settling_time
-        df.at[idx, "SSE"] = sse
-        df.at[idx, "RiseTime"] = rise_time
+# Preprocessing pipelines
+numeric_transformer = Pipeline(steps=[
+    ("imputer", SimpleImputer(strategy="mean")),
+    ("scaler", StandardScaler())
+])
+categorical_transformer = OneHotEncoder(handle_unknown="ignore")
 
-    except Exception as e:
-        continue
+preprocessor = ColumnTransformer(
+    transformers=[
+        ("num", numeric_transformer, numeric_features),
+        ("cat", categorical_transformer, categorical_features),
+    ]
+)
 
-# Save to new file
-df.to_csv(r"D:\BA\PID-Controller-optimization-with-machine-learning\data\pid_dataset_with_metrics.csv", index=False)
-print("✅ Metrics computed and saved to pid_dataset_with_metrics.csv")
+# Define model pipeline with MLP
+mlp = MLPRegressor(hidden_layer_sizes=(64, 64), max_iter=1000, random_state=42)
+model = Pipeline(steps=[
+    ("preprocessor", preprocessor),
+    ("regressor", MultiOutputRegressor(mlp))
+])
+
+# Split data
+X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+
+# Train model
+model.fit(X_train, Y_train)
+
+# Predict and evaluate
+Y_pred = model.predict(X_test)
+mae = mean_absolute_error(Y_test, Y_pred, multioutput='raw_values')
+r2 = r2_score(Y_test, Y_pred, multioutput='raw_values')
+
+metrics_summary = pd.DataFrame({
+    "Target": target_cols,
+    "MAE": mae,
+    "R2": r2
+})
+
+# Save model
+joblib.dump(model, "/mnt/data/pid_mlp_surrogate_model.pkl")
+
+# Display performance summary
+import ace_tools as tools; tools.display_dataframe_to_user(name="MLP Surrogate Model Performance", dataframe=metrics_summary)
+
+# Optional: Plot ISE predictions
+Y_test_reset = Y_test.reset_index(drop=True)
+Y_pred_df = pd.DataFrame(Y_pred, columns=target_cols)
+
+plt.scatter(Y_test_reset["ISE"], Y_pred_df["ISE"], alpha=0.6)
+plt.xlabel("True ISE")
+plt.ylabel("Predicted ISE")
+plt.title("ISE Prediction Performance (MLP)")
+plt.grid(True)
+plt.show()
