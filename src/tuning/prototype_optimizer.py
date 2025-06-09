@@ -121,8 +121,17 @@ plt.savefig(os.path.join(export_dir, "overshoot_settling_vs_kp.png"))
 plt.show()
 
 # === 8. Distribution of ISE ===
-pop_samples = np.random.uniform([0, 0, 0], [10, 10, 5], size=(1000, 3))
-pred_ises = [cost_from_pid(p, plant_params, surrogate_model)[0] for p in pop_samples]
+#pop_samples = np.random.uniform([0, 0, 0], [10, 10, 5], size=(1000, 3))
+#pred_ises = [cost_from_pid(p, plant_params, surrogate_model)[0] for p in pop_samples]
+pred_ises = []
+for p in pop_samples:
+    try:
+        val = cost_from_pid(p, plant_params, surrogate_model)[0]
+        if isinstance(val, (int, float)) and not np.isnan(val):
+            pred_ises.append(val)
+    except Exception as e:
+        print(f"⚠️ Skipped sample {p} due to error: {e}")
+
 plt.figure()
 plt.hist(pred_ises, bins=30, color='steelblue', edgecolor='k')
 plt.title("Distribution of Surrogate-Predicted ISE")

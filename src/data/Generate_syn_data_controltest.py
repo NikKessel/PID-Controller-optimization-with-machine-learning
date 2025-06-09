@@ -7,7 +7,7 @@ from control import tf, feedback, step_response
 from control.matlab import pade
 
 # === CONFIG ===
-num_samples = 10000  # how many systems to generate
+num_samples = 1000  # how many systems to generate
 output_csv_path = r"D:\BA\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv"
 plot_dir = r"D:\BA\PID-Controller-optimization-with-machine-learning\plots\visul_syn_data"
 plot_output_dir = r"D:\BA\PID-Controller-optimization-with-machine-learning\plots\visul_syn_data"
@@ -120,18 +120,20 @@ def simulate_and_extract(num, den, Kp, Ki, Kd, setpoint):
     T_sys = feedback(C * G, 1)
 
     t, y = step_response(T_sys, T=np.linspace(0, 200, 2000))
-    w = np.ones_like(t) * setpoint  # use the actual step height
+    w = np.ones_like(t) * setpoint
     e = w - y
     dt = t[1] - t[0]
 
-    # Control effort (not used in metric but helpful for energy calc)
+    # Control effort u(t)
     u = Kp * e + Ki * np.cumsum(e) * dt + Kd * np.gradient(e, dt)
 
-    # === Metrics ===
+    # Final value
     y_final = y[-1] if y[-1] != 0 else 1e-6
+
+    # Overshoot
     overshoot = (np.max(y) - y_final) / y_final
 
-    # Rise time: 10% to 90% of final value
+    # Rise time (10% to 90%)
     try:
         t_10 = t[np.where(y >= 0.1 * y_final)[0][0]]
         t_90 = t[np.where(y >= 0.9 * y_final)[0][0]]
@@ -139,33 +141,30 @@ def simulate_and_extract(num, den, Kp, Ki, Kd, setpoint):
     except IndexError:
         rise_time = np.nan
 
-    # Settling time: time when y stays within ±2% of final value
-    try:
-        tol = 0.02 * y_final
-        above = np.where(np.abs(y - y_final) > tol)[0]
-        if len(above) == 0:
-            settling_time = 0
-        else:
-            settling_time = t[above[-1]]  # last out-of-bound index
-    except IndexError:
-        settling_time = np.nan
+    # Settling time (first time y stays within ±2% band)
+    def compute_settling_time(t, y, tol_percent=0.02):
+        tol = tol_percent * abs(y_final)
+        for i in range(len(y)):
+            if np.all(np.abs(y[i:] - y_final) <= tol):
+                return t[i]
+        return np.nan
 
-    # tg: rise to 63% of final value
+    settling_time = compute_settling_time(t, y)
+
+    # Time to reach 63% (Tg)
     try:
         tg = t[np.where(y >= 0.63 * y_final)[0][0]]
     except IndexError:
         tg = np.nan
 
-    # tu: inflection point approximation via second derivative
+    # Inflection point (Tu)
     try:
         tu = t[np.where(np.diff(np.sign(np.diff(y))) < 0)[0][0]]
     except IndexError:
         tu = np.nan
 
-    # ISE (Integral of Squared Error)
+    # Error metrics
     ISE = np.sum(e**2) * dt
-
-    # SSE (Steady State Error)
     SSE = e[-1]
 
     return {
@@ -182,32 +181,37 @@ def simulate_and_extract(num, den, Kp, Ki, Kd, setpoint):
         "settling_time": settling_time,
         "rise_time": rise_time
     }
-def classify_sample(y, u, tg, tu, setpoint, sprungzeit_target):
+
+def classify_sample(y, tg, tu, setpoint, sprungzeit_target, t):
     try:
-        # Check for simulation instability
-        if (
-            np.any(np.isnan(y)) or np.any(np.isnan(u)) or
-            np.any(np.isinf(y)) or np.any(np.isinf(u)) or
-            np.isnan(tg) or np.isnan(tu)
-        ):
+        if np.any(np.isnan(y)) or np.any(np.isinf(y)) or np.isnan(tg) or np.isnan(tu):
             return "unstable"
 
         y_final = y[-1]
-        # Overshoot compared to the step height, not y_final
-        overshoot_pct = (np.max(y) - setpoint) / max(1e-6, setpoint)
 
-        # Overshoot label
+        # Get the output value 10 seconds before end
+        idx_10s_before = np.searchsorted(t, t[-1] - 10)
+        y_prev = y[idx_10s_before]
+
+        # Final value should be within ±1% of 10s-ago value
+        if not (0.99 * y_prev <= y_final <= 1.01 * y_prev):
+            return "unstable"
+
+        # Optional: overshoot check
+        overshoot_pct = (np.max(y) - setpoint) / max(setpoint, 1e-6)
         if overshoot_pct > 1.0:
             return "overshoot"
 
-        # Slow label (if response doesn't reach setpoint correctly)
-        if y_final < 0.95 * setpoint or y_final > 1.05 * setpoint or tg > 1.5 * sprungzeit_target:
+        # Optional: too slow
+        if abs(y_final - setpoint) > 0.05 * setpoint or tg > 1.5 * sprungzeit_target:
             return "slow"
 
         return "good"
 
-    except:
+    except Exception as e:
+        print("Error in classify_sample:", e)
         return "unstable"
+
 
 
 # === MAIN GENERATION LOOP ===
@@ -226,7 +230,15 @@ for i in range(num_samples):
 
     try:
         sim_data = simulate_and_extract(num, den, Kp, Ki, Kd, setpoint=tf_data["sprunghoehe_target"])
-        label = classify_sample(sim_data["y"], sim_data["u"], sim_data["tg"], sim_data["tu"], setpoint=tf_data["sprunghoehe_target"], sprungzeit_target=tf_data["sprungzeit_target"])
+        #label = classify_sample(sim_data["y"], sim_data["u"], sim_data["tg"], sim_data["tu"], setpoint=tf_data["sprunghoehe_target"], sprungzeit_target=tf_data["sprungzeit_target"])
+        label = classify_sample(
+        sim_data["y"],
+        sim_data["tg"],
+        sim_data["tu"],
+        tf_data["sprunghoehe_target"],
+        tf_data["sprungzeit_target"],
+        sim_data["t"]
+    )
 
         # Store scalar values
         row = {
@@ -248,7 +260,7 @@ for i in range(num_samples):
         sample_data.append(row)
 
         # === Save combined step + control plot (only for first 10) ===
-        if i < 10:
+        if i < 100:
             label_dir = os.path.join(plot_output_dir, label)
             os.makedirs(label_dir, exist_ok=True)
 

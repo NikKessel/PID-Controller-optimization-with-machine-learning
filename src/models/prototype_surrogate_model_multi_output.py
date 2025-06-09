@@ -16,7 +16,7 @@ from datetime import datetime
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 base_dir = r"D:\BA\PID-Controller-optimization-with-machine-learning\models\surrogate"
-output_dir = os.path.join(base_dir, f"surrogate_model_{timestamp}")
+output_dir = os.path.join(base_dir, f"surrogate_model_multi_{timestamp}")
 os.makedirs(output_dir, exist_ok=True)
 
 

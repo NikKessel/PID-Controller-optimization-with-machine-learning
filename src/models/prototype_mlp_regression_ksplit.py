@@ -2,12 +2,14 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPRegressor
+from sklearn.multioutput import MultiOutputRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import matplotlib.pyplot as plt
 import os
 from datetime import datetime
+import joblib
 
 # Load data
 df = pd.read_csv(r"D:\BA\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv")
@@ -19,6 +21,8 @@ type_features = [col for col in df.columns if col.startswith("type_")]
 features = core_features + type_features
 
 X = df[features].fillna(0)
+print("🚨 Final Features used for training:")
+print(X.columns.tolist())
 y_kp = df["Kp"]
 y_ki = df["Ki"]
 y_kd = df["Kd"]
@@ -36,6 +40,21 @@ model_kd = make_pipeline(StandardScaler(), MLPRegressor(hidden_layer_sizes=(100,
 model_kp.fit(X_train, y_kp_train)
 model_ki.fit(X_train, y_ki_train)
 model_kd.fit(X_train, y_kd_train)
+# === Train combined multi-output model ===
+
+Y_multi = df[["Kp", "Ki", "Kd"]]
+X = df[features].fillna(0)  # Re-define X for clarity
+
+X_train_m, X_test_m, Y_train_m, Y_test_m = train_test_split(X, Y_multi, test_size=0.2, random_state=42)
+
+multi_output_model = make_pipeline(
+    StandardScaler(),
+    MultiOutputRegressor(MLPRegressor(hidden_layer_sizes=(100, 50), max_iter=1000, early_stopping=True, random_state=42))
+)
+multi_output_model.fit(X_train_m, Y_train_m)
+
+# Predict
+Y_pred_m = multi_output_model.predict(X_test_m)
 
 # Predictions
 pred_kp = model_kp.predict(X_test)
@@ -59,6 +78,21 @@ weighted_mae = 1.0 * mae_kp + 1.0 * mae_ki + 0.1 * mae_kd
 # Output
 output_dir = f"D:/BA/PID-Controller-optimization-with-machine-learning/models/mlp/pid_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 os.makedirs(output_dir, exist_ok=True)
+joblib.dump(model_kp, os.path.join(output_dir, "model_kp.joblib"))
+joblib.dump(model_ki, os.path.join(output_dir, "model_ki.joblib"))
+joblib.dump(model_kd, os.path.join(output_dir, "model_kd.joblib"))
+
+mae_all = mean_absolute_error(Y_test_m, Y_pred_m, multioutput='raw_values')
+r2_all = r2_score(Y_test_m, Y_pred_m, multioutput='raw_values')
+
+metrics_multi = pd.DataFrame({
+    "Target": ["Kp", "Ki", "Kd"],
+    "MAE": mae_all,
+    "R2": r2_all
+})
+metrics_multi.to_csv(os.path.join(output_dir, "metrics_multi_output.csv"), index=False)
+
+joblib.dump(multi_output_model, os.path.join(output_dir, "model_multi_output.joblib"))
 
 metrics = pd.DataFrame({
     "Target": ["Kp", "Ki", "Kd"],
@@ -100,5 +134,6 @@ plt.grid(True)
 plt.suptitle("Regression Results: True vs Predicted Values")
 plt.tight_layout(rect=[0, 0, 1, 0.95])
 plt.show()
+plt.savefig(os.path.join(output_dir, "regression_plots.png"), dpi=300)
 
 weighted_mae, output_dir
