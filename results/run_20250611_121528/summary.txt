@@ -1,0 +1,8 @@
+Optimal PID parameters:
+Kp: 3.5458, Ki: 0.0100, Kd: 0.8640
+Predicted ISE: 14.7024
+Overshoot: 0.5578
+Settling Time: 140.2612
+Rise Time: 20.2842
+Cost: 41.0109
+Final Tu used: 7.6000, Final Tg used: 22.8000
