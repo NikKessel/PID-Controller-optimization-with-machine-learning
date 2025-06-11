@@ -11,3 +11,5 @@ xgboost
 numpy
 pandas
 utils
+control
+functools

@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import joblib
 import os
+import pandas as pd
 
 from utils.predict_pid import predict_pid_params
 
@@ -127,6 +128,7 @@ elif mode == "Evaluate PID":
             type_PT2_Td = 1 if system_type == "PT2+Td" else 0
             type_Osc2 = 1 if system_type == "Osc2" else 0
             
+
             X_eval = pd.DataFrame({
                 'K': [K],
                 'T1': [T1], 
@@ -137,13 +139,9 @@ elif mode == "Evaluate PID":
                 'Kp': [Kp],
                 'Ki': [Ki],
                 'Kd': [Kd],
-                'type_PT1': [type_PT1],
-                'type_PT2': [type_PT2],
-                'type_PT1+Td': [type_PT1_Td],
-                'type_PT2+Td': [type_PT2_Td],
-                'type_Osc2': [type_Osc2]
+                'type': [system_type]  # <--- This line adds the required 'type' column
             })
-            
+
             prediction = surrogate_model.predict(X_eval)
             ise, os, stime, rtime = prediction[0]
             st.success("Evaluation complete!")
@@ -170,40 +168,46 @@ elif mode == "Evaluate PID":
 
 elif mode == "Optimize PID":
     st.info("Use ML-guided optimization to find best PID")
-
+    model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
     st.markdown("#### Define Optimization Weights")
     w_ise = st.slider("ISE Weight", 0.0, 1.0, 0.5)
     w_os = st.slider("Overshoot Weight", 0.0, 1.0, 0.2)
     w_st = st.slider("Settling Time Weight", 0.0, 1.0, 0.2)
     w_rt = st.slider("Rise Time Weight", 0.0, 1.0, 0.1)
 
-    if st.button("⚙️ Run Optimization"):
-        Kp, Ki, Kd = 3.72, 0.012, 1.05
-        ise, os, stime, rtime = 5.12, 0.25, 123.4, 18.9
 
-        st.success("Optimization complete!")
+    system_type = st.selectbox("System Type", ["PT1", "PT2", "PT1+Td", "PT2+Td", "Osc2"])
+    K = st.number_input("K (Gain)", min_value=0.1, max_value=5.0, value=1.0)
+    T1 = st.number_input("T1 (Time Constant in s)", min_value=1.0, max_value=50.0, value=20.0)
+    T2 = st.number_input("T2 (2nd Time Constant)", min_value=0.0, max_value=50.0, value=10.0) if "PT2" in system_type else 0.0
+    Td = st.number_input("Td (Dead Time)", min_value=0.0, max_value=5.0, value=1.0) if "Td" in system_type else 0.0
+    Tu = st.number_input("Tu (Ultimate Period)", min_value=0.0, max_value=100.0, value=10.0)
+    Tg = st.number_input("Tg (Gradient Time)", min_value=0.0, max_value=100.0, value=20.0)
 
-        st.markdown("#### Optimal PID Parameters")
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Kp", f"{Kp:.3f}")
-        col2.metric("Ki", f"{Ki:.5f}")
-        col3.metric("Kd", f"{Kd:.2f}")
+    model_path = os.path.join(model_dir, "model_surrogate.joblib")
+    surrogate_model = joblib.load(model_path)
 
-        st.markdown("#### Predicted Performance Metrics")
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("ISE", f"{ise:.2f}")
-        col2.metric("Overshoot", f"{os * 100:.1f}%")
-        col3.metric("Settling Time", f"{stime:.1f} s")
-        col4.metric("Rise Time", f"{rtime:.1f} s")
+    if st.button("⚙️ Run Optimization", key="optimize_button"):
+            weights = (w_ise, w_os, w_st, w_rt)
+            from utils.optimize_pid import optimize_pid_for_system
+            try:
+                Kp, Ki, Kd, ise, os, stime, rtime = optimize_pid_for_system(
+                    K, T1, T2, Td, Tu, Tg, system_type, surrogate_model, weights
+                )
+                st.success("Optimization complete!")
 
-        st.markdown("#### Step Response")
-        t = np.linspace(0, 100, 500)
-        y = 1 - np.exp(-t / 18) * np.sin(t / 15)
-        fig, ax = plt.subplots()
-        ax.plot(t, y, label="Optimized ML Response")
-        ax.set_xlabel("Time [s]")
-        ax.set_ylabel("Output")
-        ax.set_title("ML-Optimized Step Response")
-        ax.grid(True)
-        ax.legend()
-        st.pyplot(fig)
+                st.markdown("#### Optimal PID Parameters")
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Kp", f"{Kp:.3f}")
+                col2.metric("Ki", f"{Ki:.5f}")
+                col3.metric("Kd", f"{Kd:.2f}")
+
+                st.markdown("#### Predicted Performance Metrics")
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("ISE", f"{ise:.2f}")
+                col2.metric("Overshoot", f"{os * 100:.1f}%")
+                col3.metric("Settling Time", f"{stime:.1f} s")
+                col4.metric("Rise Time", f"{rtime:.1f} s")
+
+            except Exception as e:
+                st.error(f"Optimization failed: {e}")
