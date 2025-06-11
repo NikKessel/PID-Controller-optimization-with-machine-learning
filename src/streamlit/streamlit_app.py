@@ -19,36 +19,56 @@ st.markdown("_A modern ML-based GUI to Predict, Evaluate, and Optimize PID contr
 
 # --- Sidebar: Mode selection ---
 model_choice = None
-system_type = st.sidebar.selectbox("System Type", ["PT1", "PT2", "PT1+Td", "PT2+Td"])
-K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=5.0, value=1.0)
-T1 = st.sidebar.number_input("T1 (Time Constant in s)", min_value=1.0, max_value=50.0, value=20.0)
-T2 = st.sidebar.number_input("T2 (2nd Time Constant in s)", min_value=0.0, max_value=50.0, value=10.0) if "PT2" in system_type else 0.0
-Td = st.sidebar.number_input("Td (Dead Time in s)", min_value=0.0, max_value=5.0, value=1.0) if "Td" in system_type else 0.0
 mode = st.sidebar.radio("🧠 Select Mode", ["Predict PID", "Evaluate PID", "Optimize PID"])
 
-# --- Conditional ML model selection ---
 if mode == "Predict PID":
-    model_choice = st.sidebar.selectbox("🤖 ML Model", ["Random Forest", "MLP", "XGBoost"])
-    st.info("Predicting optimal Kp, Ki, Kd using selected ML model")
+    model_choice = st.sidebar.selectbox("🤖 ML Model", ["Random Forest", "MLP", "XGBoost"], key="model_select")
 
-    # Optional inputs if model requires more than 4 features
-    Tu = st.number_input("Tu (Ultimate Period in s)", min_value=0.0, max_value=100.0, value=10.0)
-    Tg = st.number_input("Tg (Gradient Time in s)", min_value=0.0, max_value=100.0, value=20.0)
-    sprunghoehe = st.number_input("Sprunghöhe Target", min_value=0.0, max_value=10.0, value=1.0)
+    st.sidebar.markdown("**System Parameters**")
+    system_type = st.sidebar.selectbox("System Type", ["PT1", "PT2", "PT1+Td", "PT2+Td", "Osc2"])
+    K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=5.0, value=1.0)
+    T1 = st.sidebar.number_input("T1 (Time Constant in s)", min_value=1.0, max_value=50.0, value=20.0)
+    T2 = st.sidebar.number_input("T2 (2nd Time Constant in s)", min_value=0.0, max_value=50.0, value=10.0) if "PT2" in system_type else 0.0
+    Td = st.sidebar.number_input("Td (Dead Time in s)", min_value=0.0, max_value=5.0, value=1.0) if "Td" in system_type else 0.0
 
-    # One-hot encode type manually for prototype (later replace with model preprocessor)
+    st.sidebar.markdown("**Model-Specific Inputs**")
+    if model_choice == "XGBoost":
+        Tu = st.sidebar.number_input("Tu (Ultimate Period in s)", min_value=0.0, max_value=100.0, value=10.0)
+        Tg = st.sidebar.number_input("Tg (Gradient Time in s)", min_value=0.0, max_value=100.0, value=20.0)
+        overshoot = st.sidebar.number_input("Overshoot", min_value=0.0, max_value=2.0, value=0.1)
+    elif model_choice == "MLP":
+        Tu = st.sidebar.number_input("Tu (Ultimate Period in s)", min_value=0.0, max_value=100.0, value=10.0)
+        Tg = st.sidebar.number_input("Tg (Gradient Time in s)", min_value=0.0, max_value=100.0, value=20.0)
+        overshoot = st.sidebar.number_input("Overshoot", min_value=0.0, max_value=2.0, value=0.1)
+    else:
+        Tu = Tg = overshoot = sprunghoehe = 0.0
+
+    # One-hot encode type manually
     type_PT1 = 1 if system_type == "PT1" else 0
     type_PT2 = 1 if system_type == "PT2" else 0
     type_PT1_Td = 1 if system_type == "PT1+Td" else 0
     type_PT2_Td = 1 if system_type == "PT2+Td" else 0
+    type_Osc2 = 1 if system_type == "Osc2" else 0
 
+# --- Conditional ML model selection ---
+if mode == "Predict PID":
+    # model_choice already defined in sidebar above, remove duplicate
+    st.info("Predicting optimal Kp, Ki, Kd using selected ML model")
+
+    
     if st.button("🔍 Predict PID"):
         try:
             model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
             model_filename = f"model_{model_choice.lower().replace(' ', '_')}.joblib"
             model_path = os.path.join(model_dir, model_filename)
             model = joblib.load(model_path)
-            X = np.array([[K, T1, T2, Td, Tu, Tg, sprunghoehe, type_PT1, type_PT2, type_PT1_Td, type_PT2_Td]])
+            if model_choice == "Random Forest":
+                X = np.array([[K, T1, T2, Td]])
+            elif model_choice == "XGBoost":
+                type_Osc2 = 1 if system_type == "Osc2" else 0
+                X = np.array([[K, T1, T2, Td, Tu, Tg, overshoot, type_Osc2, type_PT1, type_PT1_Td, type_PT2, type_PT2_Td]])
+            elif model_choice == "MLP":
+                X = np.array([[K, T1, T2, Td, Tu, Tg, overshoot]])
             Kp, Ki, Kd = predict_pid_params(model, X)
             st.success("Prediction complete!")
 
