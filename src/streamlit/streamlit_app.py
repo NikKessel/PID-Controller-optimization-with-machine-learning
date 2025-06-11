@@ -52,9 +52,7 @@ if mode == "Predict PID":
 
 # --- Conditional ML model selection ---
 if mode == "Predict PID":
-    # model_choice already defined in sidebar above, remove duplicate
     st.info("Predicting optimal Kp, Ki, Kd using selected ML model")
-
     
     if st.button("🔍 Predict PID"):
         try:
@@ -94,31 +92,81 @@ if mode == "Predict PID":
 elif mode == "Evaluate PID":
     st.info("Evaluate performance of a given PID configuration")
 
+    system_type = st.selectbox("System Type", ["PT1", "PT2", "PT1+Td", "PT2+Td", "Osc2"])
+    K = st.number_input("K (Gain)", min_value=0.1, max_value=5.0, value=1.0)
+    T1 = st.number_input("T1 (Time Constant in s)", min_value=1.0, max_value=50.0, value=20.0)
+    T2 = st.number_input("T2 (2nd Time Constant in s)", min_value=0.0, max_value=50.0, value=10.0) if "PT2" in system_type else 0.0
+    Td = st.number_input("Td (Dead Time in s)", min_value=0.0, max_value=5.0, value=1.0) if "Td" in system_type else 0.0
+
     Kp = st.number_input("Kp", min_value=0.0, max_value=10.0, value=2.0)
     Ki = st.number_input("Ki", min_value=0.0, max_value=1.0, value=0.1)
     Kd = st.number_input("Kd", min_value=0.0, max_value=10.0, value=1.0)
 
-    if st.button("📊 Evaluate Performance"):
-        ise, os, stime, rtime = 6.42, 0.32, 145.5, 20.1
-        st.success("Evaluation complete!")
+    model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
+    model_path = os.path.join(model_dir, "model_surrogate.joblib")
 
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("ISE", f"{ise:.2f}")
-        col2.metric("Overshoot", f"{os * 100:.1f}%")
-        col3.metric("Settling Time", f"{stime:.1f} s")
-        col4.metric("Rise Time", f"{rtime:.1f} s")
+    try:
+        surrogate_model = joblib.load(model_path)
+    except Exception as e:
+        st.error(f"Failed to load surrogate model: {e}")
+        surrogate_model = None
 
-        st.markdown("#### Simulated Step Response")
-        t = np.linspace(0, 100, 500)
-        y = 1 - np.exp(-t / 15) * np.cos(t / 10)
-        fig, ax = plt.subplots()
-        ax.plot(t, y, label="User PID Response")
-        ax.set_xlabel("Time [s]")
-        ax.set_ylabel("Output")
-        ax.set_title("Simulated Step Response")
-        ax.grid(True)
-        ax.legend()
-        st.pyplot(fig)
+    if st.button("📊 Evaluate Performance", key="eval_button") and surrogate_model:
+        try:
+            # Add input fields for Tu and Tg in evaluation mode
+            Tu = st.number_input("Tu (Ultimate Period in s)", min_value=0.0, max_value=100.0, value=10.0, key="eval_tu")
+            Tg = st.number_input("Tg (Gradient Time in s)", min_value=0.0, max_value=100.0, value=20.0, key="eval_tg")
+            
+            # Create DataFrame with proper column names
+            import pandas as pd
+            
+            # One-hot encode system type
+            type_PT1 = 1 if system_type == "PT1" else 0
+            type_PT2 = 1 if system_type == "PT2" else 0
+            type_PT1_Td = 1 if system_type == "PT1+Td" else 0
+            type_PT2_Td = 1 if system_type == "PT2+Td" else 0
+            type_Osc2 = 1 if system_type == "Osc2" else 0
+            
+            X_eval = pd.DataFrame({
+                'K': [K],
+                'T1': [T1], 
+                'T2': [T2],
+                'Td': [Td],
+                'Tu': [Tu],
+                'Tg': [Tg],
+                'Kp': [Kp],
+                'Ki': [Ki],
+                'Kd': [Kd],
+                'type_PT1': [type_PT1],
+                'type_PT2': [type_PT2],
+                'type_PT1+Td': [type_PT1_Td],
+                'type_PT2+Td': [type_PT2_Td],
+                'type_Osc2': [type_Osc2]
+            })
+            
+            prediction = surrogate_model.predict(X_eval)
+            ise, os, stime, rtime = prediction[0]
+            st.success("Evaluation complete!")
+
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("ISE", f"{ise:.2f}")
+            col2.metric("Overshoot", f"{os * 100:.1f}%")
+            col3.metric("Settling Time", f"{stime:.1f} s")
+            col4.metric("Rise Time", f"{rtime:.1f} s")
+
+            st.markdown("#### Simulated Step Response")
+            t = np.linspace(0, 100, 500)
+            y = 1 - np.exp(-t / 15) * np.cos(t / 10)
+            fig, ax = plt.subplots()
+            ax.plot(t, y, label="User PID Response")
+            ax.set_xlabel("Time [s]")
+            ax.set_ylabel("Output")
+            ax.set_title("Simulated Step Response")
+            ax.grid(True)
+            ax.legend()
+            st.pyplot(fig)
+        except Exception as e:
+            st.error(f"Evaluation failed: {e}")
 
 elif mode == "Optimize PID":
     st.info("Use ML-guided optimization to find best PID")
