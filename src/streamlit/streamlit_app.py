@@ -172,15 +172,11 @@ if mode == "Predict PID":
 
             # Optional: Control effort plot
             st.markdown("### Control Effort")
-
-            y= t
             e = K - y
             dt = t[1] - t[0]
             u = Kp * e + Ki * np.cumsum(e) * dt + Kd * np.gradient(e, dt)
-            t = t*-1
-            u = u *-1
             fig2, ax2 = plt.subplots()
-            ax2.plot(u, t, label="u(t)")
+            ax2.plot(t, u, label="u(t)")
             ax2.set_title("Control Signal")
             ax2.set_xlabel("Time [s]")
             ax2.grid(True)
