@@ -40,8 +40,8 @@ if mode == "Predict PID":
     # Optional advanced params
     Tu = Tg = overshoot = 0.0
     if model_choice in ["MLP", "XGBoost"]:
-        Tu = st.sidebar.number_input("Tu", min_value=0.0, max_value=100.0, value=10.0)
-        Tg = st.sidebar.number_input("Tg", min_value=0.0, max_value=100.0, value=20.0)
+        Tu = st.sidebar.number_input("Tu", min_value=0.0, max_value=100.0, value=3.0)
+        Tg = st.sidebar.number_input("Tg", min_value=0.0, max_value=100.0, value=10.0)
         overshoot = st.sidebar.number_input("Overshoot", min_value=0.0, max_value=2.0, value=0.1)
 
     st.sidebar.markdown("**Plot Settings**")
