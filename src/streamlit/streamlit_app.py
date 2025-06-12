@@ -169,44 +169,58 @@ if mode == "Predict PID":
             ax.legend()
             st.pyplot(fig)
 
+            def compute_and_plot_control_effort(K, T1, T2, Td, Kp, Ki, Kd, T_final=100, N=1000):
+                # Time vector
+                t = np.linspace(0, T_final, N)
+                dt = t[1] - t[0]
 
-        
-            # Ensure scalar PID values
-            Kp = float(Kp)
-            Ki = float(Ki)
-            Kd = float(Kd)
+                # Transfer function G(s)
+                den = [T1, 1] if T2 == 0 else np.polymul([T1, 1], [T2, 1])
+                G = tf([K], den)
+                if Td > 0:
+                    G *= tf([1], [1, Td])
 
-            # Error signal
-            w = np.ones_like(t) * K
-            e = np.asarray(w - y).flatten()
+                # PID Controller C(s)
+                s = tf([1, 0], [1])
+                C = Kp + Ki / s + Kd * s
 
-            dt = float(t[1] - t[0])  # Time step
-            grad = np.gradient(e, dt)
-            integ = np.cumsum(e) * dt
+                # Closed-loop system and step response
+                sys_cl = feedback(C * G, 1)
+                t, y = step(sys_cl, T=t)
 
-            st.write(f"Kp={Kp}, Ki={Ki}, Kd={Kd}, dt={dt}")
-            st.write(f"e shape: {e.shape}, gradient shape: {grad.shape}")
+                # Step input and error signal
+                w = np.ones_like(t) * K
+                e = w - y
 
-            u = Kp * e + Ki * integ + Kd * grad
-            u = y
-            #u= u*-1
-            # Plot
-            fig2, ax2 = plt.subplots()
-            ax2.plot( u,t, label="u(t)", linewidth=2)
-            ax2.set_title("Control Signal")
-            ax2.set_xlabel("Time [s]")
-            ax2.set_ylabel("Control Effort")
-            #u= u*-1
-            ticks = ax2.get_yticks()
-            #ax2.set_yticks(ticks)
-            #ax2.set_yticklabels([f"{abs(int(t))}" for t in ticks])
-            x_ticks = ax2.get_xticks()
-            ax2.set_xticks(x_ticks)
-            ax2.set_xticklabels([f"{abs(int(t))}" for t in x_ticks])
+                # Control effort
+                u = Kp * e + Ki * np.cumsum(e) * dt + Kd * np.gradient(e, dt)
 
-            ax2.grid(True)
-            ax2.legend()
-            st.pyplot(fig2)
+                # Plot control effort
+                """fig, ax = plt.subplots(figsize=(6, 3))
+                ax.plot(t, u, label="Control Effort $u(t)$", color="tab:red")
+                ax.set_xlabel("Time [s]")
+                ax.set_ylabel("Control Signal $u(t)$")
+                ax.set_title("Control Effort over Time")
+                ax.grid(True)
+                ax.legend()
+
+                return fig  # for display in Streamlit
+                dt = t_ml[1] - t_ml[0]
+                w = np.ones_like(t_ml) * K       # Step input signal
+                e = w - y                        # Error signal
+                u = Kp_ml * e + Ki_ml * np.cumsum(e) * dt + Kd_ml * np.gradient(e, dt)
+                T_final=t
+                fig = compute_and_plot_control_effort(K, T1, T2, Td, Kp_ml, Ki_ml, Kd_ml)
+                st.pyplot(fig)
+                fig_u, ax_u = plt.subplots(figsize=(6, 3))
+                ax_u.plot(t_ml, u, label="Control Effort $u(t)$", color="tab:red")
+                ax_u.set_xlabel("Time [s]")
+                ax_u.set_ylabel("Control Signal $u(t)$")
+                ax_u.set_title("Control Effort for ML-PID")
+                ax_u.grid(True)
+                ax_u.legend()
+                st.pyplot(fig_u)  # if using Streamlit' """
+
 
         except Exception as e:
             st.error(f"Prediction or simulation failed: {e}")
