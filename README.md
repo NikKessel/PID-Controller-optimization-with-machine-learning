@@ -2,6 +2,7 @@
 
 **Bachelor Thesis – Bioprocess Engineering**  
 *Automated PID Tuning via ML Algorithms*
+
 https://ml-based-pid-optimizer.streamlit.app/
 ---
 
