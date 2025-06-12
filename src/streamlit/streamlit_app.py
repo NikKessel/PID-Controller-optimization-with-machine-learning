@@ -169,21 +169,43 @@ if mode == "Predict PID":
             ax.legend()
             st.pyplot(fig)
 
+            st.write(f"Kp={Kp}, Ki={Ki}, Kd={Kd}, dt={dt}")
+            st.write(f"e shape: {e.shape}, gradient shape: {np.gradient(e, dt).shape}")
 
-            # Optional: Control effort plot
+            # Step input
+            w = np.ones_like(t) * K      # Desired value (step from 0 to K)
+            e = w - y                    # Error signal: e(t) = w(t) - y(t)
+            dt = t[1] - t[0]             # Time step
+            u = Kp * e + Ki * np.cumsum(e) * dt + Kd * np.gradient(e, dt)  # Control signal
+
+                # Ensure time is increasing (fix flipped axis)
+            if not np.all(np.diff(t) > 0):
+                sort_idx = np.argsort(t)
+                t = t[sort_idx]
+                u = u[sort_idx]
+            #u = u*-1
+            #u_plot = np.abs(u)
+    # Plot Control Signal
             st.markdown("### Control Effort")
-            e = K - y
-            dt = t[1] - t[0]
-            u = Kp * e + Ki * np.cumsum(e) * dt + Kd * np.gradient(e, dt)
             fig2, ax2 = plt.subplots()
-            ax2.plot(t, u, label="u(t)")
+            ax2.plot(u, t, label="u(t)", linewidth=1)
+            ax2.invert_xaxis()
             ax2.set_title("Control Signal")
             ax2.set_xlabel("Time [s]")
+            ax2.set_ylabel("Control Effort")
+            ticks = ax2.get_yticks()
+            ax2.set_xticks(ticks)
+            ax2.set_xticklabels(labels=[f"{abs(int(u))}" for t in ticks])
+            ax2.set_xticklabels([f"{abs(int(np.atleast_1d(u).item()))}" for u in tick_values])
             ax2.grid(True)
+            ax2.legend()
+
+
             st.pyplot(fig2)
 
         except Exception as e:
             st.error(f"Prediction or simulation failed: {e}")
+
 
 
 elif mode == "Evaluate PID":
