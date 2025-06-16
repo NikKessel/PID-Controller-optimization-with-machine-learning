@@ -32,8 +32,8 @@ if mode == "Predict PID":
 
     st.sidebar.markdown("**System Parameters**")
     system_type = st.sidebar.selectbox("System Type", ["PT1", "PT2", "PT1+Td", "PT2+Td", "Osc2"])
-    K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=5.0, value=1.0)
-    T1 = st.sidebar.number_input("T1", min_value=1.0, max_value=50.0, value=20.0)
+    K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=1.0)
+    T1 = st.sidebar.number_input("T1", min_value=0.1, max_value=50.0, value=20.0)
     T2 = st.sidebar.number_input("T2", min_value=0.0, max_value=50.0, value=10.0) if "PT2" in system_type else 0.0
     Td = st.sidebar.number_input("Td", min_value=0.0, max_value=5.0, value=1.0) if "Td" in system_type else 0.0
 
