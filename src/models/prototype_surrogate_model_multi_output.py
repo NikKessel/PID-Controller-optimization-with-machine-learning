@@ -15,124 +15,90 @@ import os
 from datetime import datetime
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-#base_dir = r"D:\BA\PID-Controller-optimization-with-machine-learning\models\surrogate"
-base_dir = r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\data"
+base_dir = r"D:\BA\PID-Controller-optimization-with-machine-learning\models\surrogate"
+#base_dir = r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\data"
 
 output_dir = os.path.join(base_dir, f"surrogate_model_multi_{timestamp}")
 os.makedirs(output_dir, exist_ok=True)
 
+# === Load & Filter Dataset ===
+df = pd.read_csv(r"D:\BA\PID-Controller-optimization-with-machine-learning\data\pid_dataset_pidtune.csv")
+df = df.dropna(subset=["K", "T1", "T2", "Kp", "Ki", "Kd"])
 
-# Load dataset
-#ile_path = r"D:\BA\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv"
-file_path = r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv"
-df = pd.read_csv(file_path)
-print("✅ Loaded CSV with shape:", df.shape)
-print("Columns:", df.columns.tolist())
-# Filter for valid and labeled as "good"
-# Compute SSE_log first
-min_pos_sse = df.loc[df["SSE"] > 0, "SSE"].min()
-df["SSE_log"] = np.log1p(df["SSE"].apply(lambda x: min_pos_sse if x <= 0 else x))
+if "Label" in df.columns:
+    df = df[df["Label"] == "good"].copy()
 
-# Then filter and keep SSE_log
-df_clean = df[df["Label"] == "good"].copy()
+# === Feature Engineering ===
+df["T1_T2_ratio"] = df["T1"] / (df["T2"] + 1e-3)
+df["K_T1"] = df["K"] * df["T1"]
+if "Td" not in df.columns:
+    df["Td"] = 0.0
+df["log_Td"] = np.log1p(df["Td"])
 
-# Now drop rows with missing values in targets (including SSE_log)
-target_cols = ["ISE", "SSE_log",  "Overshoot", "settling_time",  "rise_time"]
-df_clean = df_clean.dropna(subset=target_cols)
+# === Target and Feature Setup ===
+target_cols = ["ISE", "SSE", "RiseTime", "SettlingTime", "Overshoot"]
+missing_targets = [col for col in target_cols if col not in df.columns]
+if missing_targets:
+    raise ValueError(f"Missing required target metrics: {missing_targets}")
 
-print("✅ After filtering 'good' labels:", df_clean.shape)
-# Features
-numeric_features = ["K", "T1", "T2", "Td", "Tu", "Tg", "Kp", "Ki", "Kd"]
-categorical_features = ["type"]
-all_features = numeric_features + categorical_features
-X = df_clean[all_features]
-Y = df_clean[target_cols]
+numeric_features = ["K", "T1", "T2", "Td", "Kp", "Ki", "Kd"]
+X = df[numeric_features]
+Y = df[target_cols]
 
-# Preprocessing pipelines
+# === Preprocessing ===
 numeric_transformer = Pipeline(steps=[
     ("imputer", SimpleImputer(strategy="mean")),
     ("scaler", StandardScaler())
 ])
-categorical_transformer = OneHotEncoder(handle_unknown="ignore")
 
 preprocessor = ColumnTransformer(
     transformers=[
-        ("num", numeric_transformer, numeric_features),
-        ("cat", categorical_transformer, categorical_features),
+        ("num", numeric_transformer, numeric_features)
     ]
 )
 
-# Define model pipeline with MLP
+# === Model ===
 mlp = MLPRegressor(hidden_layer_sizes=(64, 64), max_iter=1000, random_state=42)
 model = Pipeline(steps=[
     ("preprocessor", preprocessor),
     ("regressor", MultiOutputRegressor(mlp))
 ])
 
-# Split data
+# === Split, Train, Predict ===
 X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
-
-# Train model
 model.fit(X_train, Y_train)
-
-# Predict and evaluate
 Y_pred = model.predict(X_test)
+
+# === Metrics ===
 mae = mean_absolute_error(Y_test, Y_pred, multioutput='raw_values')
 r2 = r2_score(Y_test, Y_pred, multioutput='raw_values')
-
 metrics_summary = pd.DataFrame({
     "Target": target_cols,
     "MAE": mae,
     "R2": r2
 })
+metrics_summary.to_csv(os.path.join(output_dir, "metrics_summary.csv"), index=False)
 
-print("✅ Checking for target columns:", target_cols)
-missing_targets = [col for col in target_cols if col not in df_clean.columns]
-if missing_targets:
-    print("❌ Missing target columns:", missing_targets)
-    raise ValueError("Missing required target metrics.")
-
-# Save model
+# === Save model ===
 model_path = os.path.join(output_dir, "pid_mlp_surrogate_model.pkl")
 joblib.dump(model, model_path)
 print(f"✅ Model saved to {model_path}")
 
-# Display performance summary
+# === Plotting ===
+Y_test_reset = Y_test.reset_index(drop=True)
+Y_pred_df = pd.DataFrame(Y_pred, columns=target_cols)
 
-# === Plotting prediction performance for all target metrics ===
 for target in target_cols:
     plt.figure()
-    # Predict and evaluate
-    Y_pred = model.predict(X_test)
-    mae = mean_absolute_error(Y_test, Y_pred, multioutput='raw_values')
-    r2 = r2_score(Y_test, Y_pred, multioutput='raw_values')
-
-    # Predict once before the loop
-    Y_pred = model.predict(X_test)
-    Y_test_reset = Y_test.reset_index(drop=True)
-    Y_pred_df = pd.DataFrame(Y_pred, columns=target_cols)
-
-    # If using SSE_log, compute real SSE once
-    if "SSE_log" in target_cols:
-        Y_pred_df["SSE"] = np.expm1(Y_pred_df["SSE_log"])
-        Y_test_reset["SSE"] = np.expm1(Y_test_reset["SSE_log"])
-        sse_mae = mean_absolute_error(Y_test_reset["SSE"], Y_pred_df["SSE"])
-        sse_r2 = r2_score(Y_test_reset["SSE"], Y_pred_df["SSE"])
-        print(f"✅ SSE performance → MAE: {sse_mae:.4f}, R²: {sse_r2:.4f}")
-
-    # === Plotting each target ===
-    for target in target_cols:
-        plt.figure()
-        plt.scatter(Y_test_reset[target], Y_pred_df[target], alpha=0.6)
-        plt.xlabel(f"True {target}")
-        plt.ylabel(f"Predicted {target}")
-        plt.title(f"{target} Prediction Performance (MLP)")
-        plt.grid(True)
-        plot_path = os.path.join(output_dir, f"{target.lower()}_prediction_plot.png")
-        plt.savefig(plot_path)
-        print(f"✅ Plot saved for {target}: {plot_path}")
-        plt.close()
-
+    plt.scatter(Y_test_reset[target], Y_pred_df[target], alpha=0.6)
+    plt.xlabel(f"True {target}")
+    plt.ylabel(f"Predicted {target}")
+    plt.title(f"{target} Prediction Performance (MLP)")
+    plt.grid(True)
+    plot_path = os.path.join(output_dir, f"{target.lower()}_prediction_plot.png")
+    plt.savefig(plot_path)
+    plt.close()
+    print(f"✅ Plot saved for {target}: {plot_path}")
 
     plt.scatter(Y_test_reset[target], Y_pred_df[target], alpha=0.6)
     plt.xlabel(f"True {target}")

@@ -1,33 +1,37 @@
 # utils/optimize_pid.py
 import pandas as pd
+import joblib
+import os
 
-def optimize_pid_for_system(K, T1, T2, Td, Tu, Tg, system_type, surrogate_model, weights):
+
+def optimize_pid_for_system(K, T1, T2, Td, surrogate_model, weights):
     from scipy.optimize import differential_evolution
     import numpy as np
+    import pandas as pd
 
     def objective(params):
         Kp, Ki, Kd = params
-        X = {
+        X_df = pd.DataFrame([{
             'K': K, 'T1': T1, 'T2': T2, 'Td': Td,
-            'Tu': Tu, 'Tg': Tg,
             'Kp': Kp, 'Ki': Ki, 'Kd': Kd,
-            'type': system_type
-        }
-        import pandas as pd
-        X_df = pd.DataFrame([X])
-        ise, os, stime, rtime = surrogate_model.predict(X_df)[0]
-        w_ise, w_os, w_st, w_rt = weights
-        return (w_ise * ise) + (w_os * os) + (w_st * stime) + (w_rt * rtime)
+        }])
+        ISE, OS, ST, RT, SSE = surrogate_model.predict(X_df)[0]
 
-    bounds = [(0.1, 10.0), (0.001, 1.0), (0.0, 10.0)]  # Kp, Ki, Kd
+        return (
+            weights["ISE"] * ISE +
+            weights["Overshoot"] * OS +
+            weights["SettlingTime"] * ST +
+            weights["RiseTime"] * RT
+        )
 
-    result = differential_evolution(objective, bounds)
+    bounds = [(0.1, 10.0), (0.001, 1.0), (0.0, 10.0)]
+    result = differential_evolution(objective, bounds, seed=42)
+
     best_Kp, best_Ki, best_Kd = result.x
     best_metrics = surrogate_model.predict(pd.DataFrame([{
         'K': K, 'T1': T1, 'T2': T2, 'Td': Td,
-        'Tu': Tu, 'Tg': Tg,
         'Kp': best_Kp, 'Ki': best_Ki, 'Kd': best_Kd,
-        'type': system_type
     }]))[0]
-    
+
     return best_Kp, best_Ki, best_Kd, *best_metrics
+

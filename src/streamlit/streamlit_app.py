@@ -31,18 +31,10 @@ if mode == "Predict PID":
         st.session_state.predict_clicked = False
 
     st.sidebar.markdown("**System Parameters**")
-    system_type = st.sidebar.selectbox("System Type", ["PT1", "PT2", "PT1+Td", "PT2+Td", "Osc2"])
     K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=1.0)
     T1 = st.sidebar.number_input("T1", min_value=0.1, max_value=50.0, value=20.0)
-    T2 = st.sidebar.number_input("T2", min_value=0.0, max_value=50.0, value=10.0) if "PT2" in system_type else 0.0
-    Td = st.sidebar.number_input("Td", min_value=0.0, max_value=5.0, value=1.0) if "Td" in system_type else 0.0
-
-    # Optional advanced params
-    Tu = Tg = overshoot = 0.0
-    if model_choice in ["MLP", "XGBoost"]:
-        Tu = st.sidebar.number_input("Tu", min_value=0.0, max_value=100.0, value=3.0)
-        Tg = st.sidebar.number_input("Tg", min_value=0.0, max_value=100.0, value=10.0)
-        overshoot = st.sidebar.number_input("Overshoot", min_value=0.0, max_value=2.0, value=0.1)
+    T2 = st.sidebar.number_input("T2", min_value=0.0, max_value=50.0, value=10.0)
+    Td = st.sidebar.number_input("Td", min_value=0.0, max_value=5.0, value=1.0) 
 
     st.sidebar.markdown("**Plot Settings**")
     t_max = st.sidebar.slider("Simulation Time [s]", 20, 300, 100, key="slider_t_max")
@@ -63,7 +55,7 @@ if mode == "Predict PID":
             if model_choice == "Random Forest":
                 X = np.array([[K, T1, T2, Td]])
             elif model_choice == "MLP":
-                X = np.array([[K, T1, T2, Td, Tu, Tg, overshoot]])
+                X = np.array([[K, T1, T2, Td]])
             elif model_choice == "XGBoost":
                 type_PT1 = 1 if system_type == "PT1" else 0
                 type_PT2 = 1 if system_type == "PT2" else 0
@@ -231,14 +223,13 @@ if mode == "Predict PID":
 elif mode == "Evaluate PID":
     st.info("Evaluate performance of a given PID configuration")
 
-    system_type = st.selectbox("System Type", ["PT1", "PT2", "PT1+Td", "PT2+Td", "Osc2"])
-    K = st.number_input("K (Gain)", min_value=0.1, max_value=5.0, value=1.0)
+    K = st.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=1.0)
     T1 = st.number_input("T1 (Time Constant in s)", min_value=1.0, max_value=50.0, value=20.0)
-    T2 = st.number_input("T2 (2nd Time Constant in s)", min_value=0.0, max_value=50.0, value=10.0) if "PT2" in system_type else 0.0
-    Td = st.number_input("Td (Dead Time in s)", min_value=0.0, max_value=5.0, value=1.0) if "Td" in system_type else 0.0
+    T2 = st.number_input("T2 (2nd Time Constant in s)", min_value=0.0, max_value=50.0, value=10.0) 
+    Td = st.number_input("Td (Dead Time in s)", min_value=0.0, max_value=5.0, value=1.0) 
 
     Kp = st.number_input("Kp", min_value=0.0, max_value=10.0, value=2.0)
-    Ki = st.number_input("Ki", min_value=0.0, max_value=1.0, value=0.1)
+    Ki = st.number_input("Ki", min_value=0.0, max_value=10.0, value=0.1)
     Kd = st.number_input("Kd", min_value=0.0, max_value=10.0, value=1.0)
 
     model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
@@ -252,19 +243,11 @@ elif mode == "Evaluate PID":
 
     if st.button("📊 Evaluate Performance", key="eval_button") and surrogate_model:
         try:
-            # Add input fields for Tu and Tg in evaluation mode
-            Tu = st.number_input("Tu (Ultimate Period in s)", min_value=0.0, max_value=100.0, value=10.0, key="eval_tu")
-            Tg = st.number_input("Tg (Gradient Time in s)", min_value=0.0, max_value=100.0, value=20.0, key="eval_tg")
+
             
             # Create DataFrame with proper column names
             import pandas as pd
-            
-            # One-hot encode system type
-            type_PT1 = 1 if system_type == "PT1" else 0
-            type_PT2 = 1 if system_type == "PT2" else 0
-            type_PT1_Td = 1 if system_type == "PT1+Td" else 0
-            type_PT2_Td = 1 if system_type == "PT2+Td" else 0
-            type_Osc2 = 1 if system_type == "Osc2" else 0
+
             
 
             X_eval = pd.DataFrame({
@@ -272,23 +255,25 @@ elif mode == "Evaluate PID":
                 'T1': [T1], 
                 'T2': [T2],
                 'Td': [Td],
-                'Tu': [Tu],
-                'Tg': [Tg],
                 'Kp': [Kp],
                 'Ki': [Ki],
                 'Kd': [Kd],
-                'type': [system_type]  # <--- This line adds the required 'type' column
             })
 
             prediction = surrogate_model.predict(X_eval)
-            ise, os, stime, rtime = prediction[0]
+            ise, sse, rise_time, settling_time, overshoot = prediction[0]            
             st.success("Evaluation complete!")
 
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("ISE", f"{ise:.2f}")
-            col2.metric("Overshoot", f"{os * 100:.1f}%")
-            col3.metric("Settling Time", f"{stime:.1f} s")
-            col4.metric("Rise Time", f"{rtime:.1f} s")
+            # === Display Metrics ===
+            st.markdown("### 📈 Predicted Performance Metrics")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("ISE", f"{ise:.4f}")
+            col2.metric("SSE", f"{sse:.5f}")
+            col3.metric("Overshoot", f"{overshoot:.1f} %")
+
+            col4, col5 = st.columns(2)
+            col4.metric("Settling Time", f"{settling_time:.2f} s")
+            col5.metric("Rise Time", f"{rise_time:.2f} s")
 
             st.markdown("#### Simulated Step Response")
             t = np.linspace(0, 100, 500)
@@ -314,23 +299,28 @@ elif mode == "Optimize PID":
     w_rt = st.slider("Rise Time Weight", 0.0, 1.0, 0.1)
 
 
-    system_type = st.selectbox("System Type", ["PT1", "PT2", "PT1+Td", "PT2+Td", "Osc2"])
-    K = st.number_input("K (Gain)", min_value=0.1, max_value=5.0, value=1.0)
+    K = st.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=1.0)
     T1 = st.number_input("T1 (Time Constant in s)", min_value=1.0, max_value=50.0, value=20.0)
-    T2 = st.number_input("T2 (2nd Time Constant)", min_value=0.0, max_value=50.0, value=10.0) if "PT2" in system_type else 0.0
-    Td = st.number_input("Td (Dead Time)", min_value=0.0, max_value=5.0, value=1.0) if "Td" in system_type else 0.0
-    Tu = st.number_input("Tu (Ultimate Period)", min_value=0.0, max_value=100.0, value=10.0)
-    Tg = st.number_input("Tg (Gradient Time)", min_value=0.0, max_value=100.0, value=20.0)
+    T2 = st.number_input("T2 (2nd Time Constant)", min_value=0.0, max_value=50.0, value=10.0) 
+    Td = st.number_input("Td (Dead Time)", min_value=0.0, max_value=5.0, value=1.0) 
+
 
     model_path = os.path.join(model_dir, "model_surrogate.joblib")
     surrogate_model = joblib.load(model_path)
 
     if st.button("⚙️ Run Optimization", key="optimize_button"):
-            weights = (w_ise, w_os, w_st, w_rt)
+            #weights = (w_ise, w_os, w_st, w_rt)
+            weights = {
+                        "ISE":  w_ise,
+                        "Overshoot": w_os,
+                        "SettlingTime": w_st,
+                        "RiseTime": w_rt
+                    }
+
             from utils.optimize_pid import optimize_pid_for_system
             try:
-                Kp, Ki, Kd, ise, os, stime, rtime = optimize_pid_for_system(
-                    K, T1, T2, Td, Tu, Tg, system_type, surrogate_model, weights
+                Kp, Ki, Kd, ise, os, stime, rtime, sse = optimize_pid_for_system(
+                    K, T1, T2, Td, surrogate_model, weights
                 )
                 st.success("Optimization complete!")
 
