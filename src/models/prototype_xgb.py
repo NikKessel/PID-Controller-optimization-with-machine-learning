@@ -11,8 +11,10 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 
 # === 1. Load and preprocess data ===
-csv_path = r"D:\BA\PID-Controller-optimization-with-machine-learning\pid_dataset_control.csv"
-df = pd.read_csv(csv_path)
+#csv_path = r"D:\BA\PID-Controller-optimization-with-machine-learning\pid_dataset_control.csv"
+#df = pd.read_csv(r"D:\BA\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv")
+df = pd.read_csv(r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv")
+#df = pd.read_csv(csv_path)
 
 # One-hot encode the 'type' column
 df = pd.get_dummies(df, columns=["type"])
@@ -20,6 +22,7 @@ df = pd.get_dummies(df, columns=["type"])
 
 # === 2. Define input features and targets ===
 core_features = ["K", "T1", "T2", "Td", "Tu", "Tg", "Overshoot"]
+#core_features = ["K", "T1", "T2", "Td"]
 type_features = [col for col in df.columns if col.startswith("type_")]
 features = core_features + type_features
 targets = ["Kp", "Ki", "Kd"]
@@ -55,7 +58,9 @@ metrics_df = pd.DataFrame(metrics).T
 
 # === 7. Save All Outputs ===
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-output_dir = fr"D:\BA\PID-Controller-optimization-with-machine-learning\models\xgboost\pid_model_{timestamp}"
+#output_dir = fr"D:\BA\PID-Controller-optimization-with-machine-learning\models\xgboost\pid_model_{timestamp}"
+output_dir = rf"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\models\xgboost\pid_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
 os.makedirs(output_dir, exist_ok=True)
 
 # Save model

@@ -7,10 +7,14 @@ from control import tf, feedback, step_response
 from control.matlab import pade
 
 # === CONFIG ===
-num_samples = 10000  # how many systems to generate
-output_csv_path = r"D:\BA\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv"
-plot_dir = r"D:\BA\PID-Controller-optimization-with-machine-learning\plots\visul_syn_data"
-plot_output_dir = r"D:\BA\PID-Controller-optimization-with-machine-learning\plots\visul_syn_data"
+num_samples = 100000  # how many systems to generate
+#output_csv_path = r"D:\BA\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv"
+#plot_dir = r"D:\BA\PID-Controller-optimization-with-machine-learning\plots\visul_syn_data"
+#plot_output_dir = r"D:\BA\PID-Controller-optimization-with-machine-learning\plots\visul_syn_data"
+
+output_csv_path = r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv"
+plot_dir = r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\plots\visul_syn_data"
+plot_output_dir = r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\plots\visul_syn_data"
 
 os.makedirs(plot_output_dir, exist_ok=True)
 # === Create subfolders for labeled plots ===
@@ -21,7 +25,7 @@ for cat in label_categories:
 
 # === TRANSFER FUNCTION GENERATOR ===
 def generate_transfer_function(type_name, sprunghoehe_target=None, sprungzeit_target=None):
-    K = random.uniform(0.5, 3.0)
+    K = random.uniform(0.1, 10.0)
     T1 = T2 = Td = zeta = omega_n = None
 
     # Generate targets if not provided
@@ -34,8 +38,8 @@ def generate_transfer_function(type_name, sprunghoehe_target=None, sprungzeit_ta
         den = [T1, 1]
 
     elif type_name == "PT2":
-        T1 = random.uniform(5, 50)
-        T2 = random.uniform(1, T1)
+        T1 = random.uniform(1, 50)
+        T2 = random.uniform(0.1, T1)
         num = [K]
         den = np.polymul([T1, 1], [T2, 1])
 
@@ -224,9 +228,9 @@ for i in range(num_samples):
 
     num, den = tf_data["num"], tf_data["den"]
 
-    Kp = random.uniform(0.5, 3.0)
-    Ki = random.uniform(0.01, 1.0)
-    Kd = random.uniform(0.01, 1.0)
+    Kp = random.uniform(0.01, 300.0)
+    Ki = random.uniform(0.01, 300.0)
+    Kd = random.uniform(0.01, 300.0)
 
     try:
         sim_data = simulate_and_extract(num, den, Kp, Ki, Kd, setpoint=tf_data["sprunghoehe_target"])

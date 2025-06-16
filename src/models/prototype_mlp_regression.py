@@ -10,12 +10,17 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import seaborn as sns
+
 
 # === 1. Load and prepare data ===
-df = pd.read_csv(r"D:\BA\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv")
+#df = pd.read_csv(r"D:\BA\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv")
+df = pd.read_csv(r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv")
 df = df[df["Label"] == "good"].copy()
 
-core_features = ["K", "T1", "T2", "Td", "Tu", "Tg", "sprunghoehe_target"]
+#core_features = ["K", "T1", "T2", "Td", "Tu", "Tg", "sprunghoehe_target"]
+core_features = ["K", "T1", "T2", "Td"]
+
 type_features = [col for col in df.columns if col.startswith("type_")]
 features = core_features + type_features
 targets = ["Kp", "Ki", "Kd"]
@@ -23,16 +28,40 @@ targets = ["Kp", "Ki", "Kd"]
 X = df[features].fillna(0)
 y = df[targets]
 
+for target in targets:
+    plt.figure()
+    sns.histplot(df[target], bins=40, kde=True)
+    plt.title(f"Distribution of {target}")
+    plt.xlabel(target)
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
 # === 2. Train/test split ===
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
 # === 3. Define model pipeline ===
-mlp = MLPRegressor(hidden_layer_sizes=(100, 50), activation='relu', solver='adam',
-                   max_iter=1000, early_stopping=True, random_state=42)
+#mlp = MLPRegressor(hidden_layer_sizes=(100,50), activation='relu', solver='adam',
+                   #max_iter=1000, early_stopping=True, random_state=42)
+mlp = MLPRegressor(
+    hidden_layer_sizes=(128, 64, 32),
+    activation='relu',
+    solver='adam',
+    learning_rate='adaptive',         # 👈 new
+    alpha=1e-4,                        # 👈 L2 reg
+    max_iter=2000,
+    early_stopping=True,
+    n_iter_no_change=20,
+    random_state=42
+)
+
 pipeline = make_pipeline(StandardScaler(), MultiOutputRegressor(mlp))
 
 # === 4. Train model ===
 pipeline.fit(X_train, y_train)
+
+cv_scores = cross_val_score(pipeline, X, y, cv=5, scoring='r2')
+print(f"Cross-validated R²: Mean = {np.mean(cv_scores):.4f}, Std = {np.std(cv_scores):.4f}")
 
 # === 5. Predict and evaluate ===
 y_pred = pipeline.predict(X_test)
@@ -46,7 +75,9 @@ print("MSE:", mse)
 print("R^2:", r2)
 
 # === 6. Residual plots ===
-output_dir = f"D:/BA/PID-Controller-optimization-with-machine-learning/models/mlp/pid_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+#output_dir = f"D:/BA/PID-Controller-optimization-with-machine-learning/models/mlp/pid_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+output_dir = rf"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\models\mlp\pid_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
 os.makedirs(output_dir, exist_ok=True)
 
 for i, target in enumerate(targets):
