@@ -6,7 +6,7 @@ import joblib
 from datetime import datetime
 from xgboost import XGBRegressor, plot_importance
 from sklearn.multioutput import MultiOutputRegressor
-from sklearn.model_selection import train_test_split, KFold, cross_val_score
+from sklearn.model_selection import train_test_split, KFold, cross_val_score, GridSearchCV
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 
@@ -23,7 +23,12 @@ df = pd.get_dummies(df, columns=["type"])
 # === 2. Define input features and targets ===
 core_features = ["K", "T1", "T2", "Td", "Tu", "Tg", "Overshoot"]
 #core_features = ["K", "T1", "T2", "Td"]
+df["T1_T2_ratio"] = df["T1"] / (df["T2"] + 1e-3)  # avoid div by 0
+df["K_T1"] = df["K"] * df["T1"]
+df["log_Td"] = np.log1p(df["Td"])  # log(1 + Td)
 type_features = [col for col in df.columns if col.startswith("type_")]
+engineered_features: list[str] = ["T1_T2_ratio", "K_T1", "log_Td"]
+#features = core_features + engineered_features + type_features
 features = core_features + type_features
 targets = ["Kp", "Ki", "Kd"]
 df_good = df[df["Label"] == "good"].copy()
@@ -32,15 +37,35 @@ X = df_good[features].fillna(0)
 y = df_good[targets]
 
 
+
 # === 3. Train/Test Split ===
+
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
 # === 4. Train XGBoost Model ===
 xgb_base = XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=42)
 model = MultiOutputRegressor(xgb_base)
-model.fit(X_train, y_train)
+
+param_grid = {
+    "estimator__n_estimators": [100, 300, 500],
+    "estimator__max_depth": [3, 5, 7],
+    "estimator__learning_rate": [0.05, 0.1, 0.2],
+    "estimator__subsample": [0.8, 1.0],
+    "estimator__colsample_bytree": [0.8, 1.0],
+    "estimator__reg_lambda": [0.1, 1.0]
+}
+
+grid = GridSearchCV(MultiOutputRegressor(XGBRegressor(random_state=42)), param_grid, cv=3, scoring='r2', verbose=2, n_jobs=-1)
+grid.fit(X_train, y_train)
+print("Best parameters found:")
+print(grid.best_params_)
+
+model = grid.best_estimator_
+#model.fit(X_train, y_train)
 
 # === 5. Predictions ===
+
+
 y_pred = model.predict(X_test)
 
 # === 6. Metrics ===

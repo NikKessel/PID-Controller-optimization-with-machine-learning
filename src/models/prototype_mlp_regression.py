@@ -4,12 +4,14 @@ import matplotlib.pyplot as plt
 import os
 import joblib
 from datetime import datetime
-from sklearn.model_selection import train_test_split, KFold, cross_val_score
+from sklearn.model_selection import train_test_split, KFold, cross_val_score, GridSearchCV
 from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.compose import TransformedTargetRegressor
+
 import seaborn as sns
 
 
@@ -18,11 +20,24 @@ import seaborn as sns
 df = pd.read_csv(r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv")
 df = df[df["Label"] == "good"].copy()
 
-#core_features = ["K", "T1", "T2", "Td", "Tu", "Tg", "sprunghoehe_target"]
-core_features = ["K", "T1", "T2", "Td"]
+core_features = ["K", "T1", "T2", "Td", "Tu", "Tg", "sprunghoehe_target"]
+#core_features = ["K", "T1", "T2", "Td"]
+# === 1b. Feature Engineering ===
+df["T1_T2_ratio"] = df["T1"] / (df["T2"] + 1e-3)  # avoid div by 0
+df["K_T1"] = df["K"] * df["T1"]
+df["log_Td"] = np.log1p(df["Td"])  # log(1 + Td)
 
-type_features = [col for col in df.columns if col.startswith("type_")]
-features = core_features + type_features
+# Optionally drop outliers for better regression stability
+#df = df[(df["Kp"] < 10) & (df["Ki"] < 5) & (df["Kd"] < 5)]
+
+type_features: list[str] = [col for col in df.columns if col.startswith("type_")]
+
+# Redefine feature set
+engineered_features = ["T1_T2_ratio", "K_T1", "log_Td"]
+features = core_features + engineered_features + type_features
+X = df[features].fillna(0)
+
+#features = core_features + type_features
 targets = ["Kp", "Ki", "Kd"]
 
 X = df[features].fillna(0)
@@ -40,6 +55,28 @@ for target in targets:
 # === 2. Train/test split ===
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
+# Base model
+base_mlp = MLPRegressor(max_iter=2000, early_stopping=True, random_state=42)
+
+# Multi-output wrapper
+wrapped = MultiOutputRegressor(base_mlp)
+
+# Pipeline
+pipeline = make_pipeline(StandardScaler(), wrapped)
+
+# Parameter grid
+param_grid = {
+    'multioutputregressor__estimator__hidden_layer_sizes': [(128, 64, 32), (256, 128, 64)],
+    'multioutputregressor__estimator__alpha': [1e-5, 1e-4, 1e-3],
+    'multioutputregressor__estimator__learning_rate': ['constant', 'adaptive'],
+}
+
+# Grid search
+grid = GridSearchCV(pipeline, param_grid, cv=3, scoring='r2', verbose=2, n_jobs=-1)
+grid.fit(X_train, y_train)
+
+print(f"Best Params: {grid.best_params_}")
+pipeline = grid.best_estimator_  # use best model
 # === 3. Define model pipeline ===
 #mlp = MLPRegressor(hidden_layer_sizes=(100,50), activation='relu', solver='adam',
                    #max_iter=1000, early_stopping=True, random_state=42)
@@ -47,15 +84,21 @@ mlp = MLPRegressor(
     hidden_layer_sizes=(128, 64, 32),
     activation='relu',
     solver='adam',
-    learning_rate='adaptive',         # 👈 new
-    alpha=1e-4,                        # 👈 L2 reg
+    learning_rate='adaptive',         #  new
+    alpha=1e-4,                        #  L2 reg
     max_iter=2000,
     early_stopping=True,
     n_iter_no_change=20,
     random_state=42
 )
-
-pipeline = make_pipeline(StandardScaler(), MultiOutputRegressor(mlp))
+scaler_y = StandardScaler()
+pipeline = make_pipeline(
+    StandardScaler(),
+    MultiOutputRegressor(
+        TransformedTargetRegressor(regressor=mlp, transformer=scaler_y)
+    )
+)
+#pipeline = make_pipeline(StandardScaler(), MultiOutputRegressor(mlp))
 
 # === 4. Train model ===
 pipeline.fit(X_train, y_train)
