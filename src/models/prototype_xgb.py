@@ -13,27 +13,30 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 # === 1. Load and preprocess data ===
 #csv_path = r"D:\BA\PID-Controller-optimization-with-machine-learning\pid_dataset_control.csv"
 #df = pd.read_csv(r"D:\BA\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv")
-df = pd.read_csv(r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv")
+df = pd.read_csv(r"D:\BA\PID-Controller-optimization-with-machine-learning\data\pid_dataset_pidtune.csv")
 #df = pd.read_csv(csv_path)
+print("Columns in df:", df.columns.tolist())
+df = df.dropna(subset=["K", "T1", "T2", "Kp", "Ki", "Kd"])
 
 # One-hot encode the 'type' column
-df = pd.get_dummies(df, columns=["type"])
+#df = pd.get_dummies(df, columns=["type"])
 
 
 # === 2. Define input features and targets ===
-core_features = ["K", "T1", "T2", "Td", "Tu", "Tg", "Overshoot"]
+core_features = ["K", "T1", "T2"]
 #core_features = ["K", "T1", "T2", "Td"]
-df["T1_T2_ratio"] = df["T1"] / (df["T2"] + 1e-3)  # avoid div by 0
-df["K_T1"] = df["K"] * df["T1"]
-df["log_Td"] = np.log1p(df["Td"])  # log(1 + Td)
+#df["T1_T2_ratio"] = df["T1"] / (df["T2"] + 1e-3)  # avoid div by 0
+#df["K_T1"] = df["K"] * df["T1"]
+#df["log_Td"] = np.log1p(df["Td"])  # log(1 + Td)
 type_features = [col for col in df.columns if col.startswith("type_")]
 engineered_features: list[str] = ["T1_T2_ratio", "K_T1", "log_Td"]
 #features = core_features + engineered_features + type_features
-features = core_features + type_features
+features = core_features 
 targets = ["Kp", "Ki", "Kd"]
-df_good = df[df["Label"] == "good"].copy()
+#df_good = df[df["Label"] == "good"].copy()
 
-X = df_good[features].fillna(0)
+df_good = df
+X = df_good[features]
 y = df_good[targets]
 
 
@@ -83,8 +86,8 @@ metrics_df = pd.DataFrame(metrics).T
 
 # === 7. Save All Outputs ===
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-#output_dir = fr"D:\BA\PID-Controller-optimization-with-machine-learning\models\xgboost\pid_model_{timestamp}"
-output_dir = rf"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\models\xgboost\pid_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+output_dir = fr"D:\BA\PID-Controller-optimization-with-machine-learning\models\xgboost\pid_model_{timestamp}"
+#output_dir = rf"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\models\xgboost\pid_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
 os.makedirs(output_dir, exist_ok=True)
 

@@ -297,12 +297,22 @@ elif mode == "Optimize PID":
     w_os = st.slider("Overshoot Weight", 0.0, 1.0, 0.2)
     w_st = st.slider("Settling Time Weight", 0.0, 1.0, 0.2)
     w_rt = st.slider("Rise Time Weight", 0.0, 1.0, 0.1)
+    st.markdown("#### Define Performance Constraints")
 
+    c1, c2 = st.columns(2)
+    with c1:
+        max_ise = st.number_input("Max ISE", min_value=0.0, max_value=100.0, value=25.0)
+        max_st = st.number_input("Max Settling Time", min_value=0.0, max_value=300.0, value=100.0)
+        max_sse = st.number_input("Max SSE", min_value=0.0, max_value=1.0, value=0.5)
+    with c2:
+        max_os = st.number_input("Max Overshoot (%)", min_value=0.0, max_value=100.0, value=50.0)
+        max_rt = st.number_input("Max Rise Time", min_value=0.0, max_value=200.0, value=50.0)
 
-    K = st.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=1.0)
-    T1 = st.number_input("T1 (Time Constant in s)", min_value=1.0, max_value=50.0, value=20.0)
-    T2 = st.number_input("T2 (2nd Time Constant)", min_value=0.0, max_value=50.0, value=10.0) 
-    Td = st.number_input("Td (Dead Time)", min_value=0.0, max_value=5.0, value=1.0) 
+    st.sidebar.markdown("**Plant Parameter**")
+    K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=1.0)
+    T1 = st.sidebar.number_input("T1 (Time Constant in s)", min_value=1.0, max_value=50.0, value=20.0)
+    T2 = st.sidebar.number_input("T2 (2nd Time Constant)", min_value=0.0, max_value=50.0, value=10.0) 
+    Td = st.sidebar.number_input("Td (Dead Time)", min_value=0.0, max_value=5.0, value=1.0) 
 
 
     model_path = os.path.join(model_dir, "model_surrogate.joblib")
@@ -316,11 +326,18 @@ elif mode == "Optimize PID":
                         "SettlingTime": w_st,
                         "RiseTime": w_rt
                     }
+            constraints = {
+            "ISE": max_ise,
+            "Overshoot": max_os ,  # convert from % to 0–1 range
+            "SettlingTime": max_st,
+            "RiseTime": max_rt,
+            "SSE": max_sse,
+}
 
             from utils.optimize_pid import optimize_pid_for_system
             try:
                 Kp, Ki, Kd, ise, os, stime, rtime, sse = optimize_pid_for_system(
-                    K, T1, T2, Td, surrogate_model, weights
+                    K, T1, T2, Td, surrogate_model, weights, constraints
                 )
                 st.success("Optimization complete!")
 
@@ -333,7 +350,7 @@ elif mode == "Optimize PID":
                 st.markdown("#### Predicted Performance Metrics")
                 col1, col2, col3, col4 = st.columns(4)
                 col1.metric("ISE", f"{ise:.2f}")
-                col2.metric("Overshoot", f"{os * 100:.1f}%")
+                col2.metric("Overshoot", f"{os :.1f}%")
                 col3.metric("Settling Time", f"{stime:.1f} s")
                 col4.metric("Rise Time", f"{rtime:.1f} s")
 
