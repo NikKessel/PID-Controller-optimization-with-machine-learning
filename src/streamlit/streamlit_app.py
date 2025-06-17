@@ -6,6 +6,8 @@ import os
 import pandas as pd
 from control.matlab import tf, feedback, step
 from utils.predict_pid import predict_pid_params
+from utils.simulink_runner import run_simulink_simulation
+
 
 # Set page config
 st.set_page_config(
@@ -20,8 +22,16 @@ st.markdown("_A modern ML-based GUI to Predict, Evaluate, and Optimize PID contr
 
 # --- Sidebar: Mode selection ---
 model_choice = None
-mode = st.sidebar.radio("🧠 Select Mode", ["Predict PID", "Evaluate PID", "Optimize PID"])
-
+#mode = st.sidebar.radio("🧠 Select Mode", ["Predict PID", "Evaluate PID", "Optimize PID", "Simulink Validation"])
+mode = st.sidebar.selectbox(
+    "Choose Mode",
+    [
+        "Evaluate PID",
+        "Optimize PID",
+        "Predict PID",
+        "Simulink Validation"  # ✅ This must match your `elif` string
+    ]
+)
 
 
 # --- Conditional ML model selection ---
@@ -352,3 +362,48 @@ elif mode == "Optimize PID":
 
             except Exception as e:
                 st.error(f"Optimization failed: {e}")
+                
+elif mode == "Simulink Validation":
+    st.success("✅ Entered Simulink Validation mode")  # Debug marker
+    st.header("🧪 Simulink-in-the-Loop Validation")
+    st.markdown("Run your controller on a real Simulink model and compare the result.")
+
+    # === Input fields ===
+    st.subheader("System Parameters")
+    K = st.number_input("K (Gain)", min_value=0.1, max_value=5.0, value=1.5)
+    T1 = st.number_input("T1 (Time Constant 1)", min_value=0.01, max_value=50.0, value=12.0)
+    T2 = st.number_input("T2 (Time Constant 2)", min_value=0.01, max_value=50.0, value=4.0)
+
+    st.subheader("PID Parameters")
+    Kp = st.number_input("Kp", min_value=0.0, max_value=20.0, value=1.2)
+    Ki = st.number_input("Ki", min_value=0.0, max_value=20.0, value=0.4)
+    Kd = st.number_input("Kd", min_value=0.0, max_value=20.0, value=0.2)
+
+    if st.button("▶️ Run Simulation"):
+        with st.spinner("Running MATLAB simulation..."):
+            try:
+                from utils.simulink_runner import run_simulink_simulation
+                results = run_simulink_simulation(K, T1, T2, Kp, Ki, Kd)
+
+                st.success("✅ Simulation completed successfully.")
+                st.subheader("📈 Step Response")
+                import matplotlib.pyplot as plt
+                fig, ax = plt.subplots()
+                ax.plot(results['t'], results['y'], label='y(t)')
+                ax.plot(results['t'], results['u'], label='u(t)', linestyle='--')
+                ax.set_xlabel("Time (s)")
+                ax.set_ylabel("Output / Control")
+                ax.legend()
+                st.pyplot(fig)
+
+                st.subheader("📊 Performance Metrics")
+                st.write({
+                    "ISE": results['ISE'],
+                    "SSE": results['SSE'],
+                    "Overshoot": results['Overshoot'],
+                    "Rise Time": results['RiseTime'],
+                    "Settling Time": results['SettlingTime'],
+                })
+
+            except Exception as e:
+                st.error(f"❌ Simulation failed:\n{e}")
