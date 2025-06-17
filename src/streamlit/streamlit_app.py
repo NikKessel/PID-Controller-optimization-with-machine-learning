@@ -57,12 +57,8 @@ if mode == "Predict PID":
             elif model_choice == "MLP":
                 X = np.array([[K, T1, T2, Td]])
             elif model_choice == "XGBoost":
-                type_PT1 = 1 if system_type == "PT1" else 0
-                type_PT2 = 1 if system_type == "PT2" else 0
-                type_PT1_Td = 1 if system_type == "PT1+Td" else 0
-                type_PT2_Td = 1 if system_type == "PT2+Td" else 0
-                type_Osc2 = 1 if system_type == "Osc2" else 0
-                X = np.array([[K, T1, T2, Td, Tu, Tg, overshoot, type_Osc2, type_PT1, type_PT1_Td, type_PT2, type_PT2_Td]])
+                X = np.array([[K, T1, T2, Td]])
+
 
             from utils.predict_pid import predict_pid_params
             Kp, Ki, Kd = predict_pid_params(model, X)
