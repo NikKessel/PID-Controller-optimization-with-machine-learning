@@ -307,7 +307,7 @@ elif mode == "Optimize PID":
     st.sidebar.markdown("**Plant Parameter**")
     K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=4.0)
     T1 = st.sidebar.number_input("T1 (Time Constant in s)", min_value=1.0, max_value=50.0, value=10.0)
-    T2 = st.sidebar.number_input("T2 (2nd Time Constant)", min_value=0.0, max_value=50.0, value=3.0) 
+    T2 = st.sidebar.number_input("T2 (2nd Time Constant)", min_value=0.0, max_value=50.0, value=3.0) #
     Td = st.sidebar.number_input("Td (Dead Time)", min_value=0.0, max_value=5.0, value=0.6) 
 
 
