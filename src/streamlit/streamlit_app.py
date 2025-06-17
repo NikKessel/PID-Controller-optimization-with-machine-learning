@@ -17,7 +17,7 @@ st.set_page_config(
 )
 
 # Title and subtitle
-st.title("🎛️ PID Controller Optimization Tool")
+st.title("🎛️ PID Controller Optimization Tool") #
 st.markdown("_A modern ML-based GUI to Predict, Evaluate, and Optimize PID controllers for your process models._")
 
 # --- Sidebar: Mode selection ---
