@@ -305,10 +305,10 @@ elif mode == "Optimize PID":
         max_rt = st.number_input("Max Rise Time", min_value=0.0, max_value=200.0, value=50.0)
 
     st.sidebar.markdown("**Plant Parameter**")
-    K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=1.0)
-    T1 = st.sidebar.number_input("T1 (Time Constant in s)", min_value=1.0, max_value=50.0, value=20.0)
-    T2 = st.sidebar.number_input("T2 (2nd Time Constant)", min_value=0.0, max_value=50.0, value=10.0) 
-    Td = st.sidebar.number_input("Td (Dead Time)", min_value=0.0, max_value=5.0, value=1.0) 
+    K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=4.0)
+    T1 = st.sidebar.number_input("T1 (Time Constant in s)", min_value=1.0, max_value=50.0, value=10.0)
+    T2 = st.sidebar.number_input("T2 (2nd Time Constant)", min_value=0.0, max_value=50.0, value=3.0) 
+    Td = st.sidebar.number_input("Td (Dead Time)", min_value=0.0, max_value=5.0, value=0.6) 
 
 
     model_path = os.path.join(model_dir, "model_surrogate.joblib")
