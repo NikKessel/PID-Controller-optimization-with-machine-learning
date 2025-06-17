@@ -57,7 +57,7 @@ if mode == "Predict PID":
             elif model_choice == "MLP":
                 X = np.array([[K, T1, T2, Td]])
             elif model_choice == "XGBoost":
-                X = np.array([[K, T1, T2, Td]])
+                X = np.array([[K, T1, T2]])
 
 
             from utils.predict_pid import predict_pid_params
