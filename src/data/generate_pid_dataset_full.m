@@ -1,7 +1,6 @@
 % === Configuration ===
 system_definitions = {
     % Label             Kmin   Kmax     T1min   T1max     T2min   T2max
-    "Toothbrush",       0.1,   1.0,     0.01,   0.1,      0.01,   0.05;
     "fast",       0.1,   1.0,     0.1,   5,      0.1,   5;
     "Medium",           1.0,  10.0,     5.0,   50.0,      2.0,   50.0;
     "Slow",            10.0, 100.0,    20.0,  100.0,     10.0,  100.0;

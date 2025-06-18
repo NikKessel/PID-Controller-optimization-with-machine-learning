@@ -9,7 +9,7 @@ from sklearn.decomposition import PCA
 
 # === Load CSV ===
 #file_path = "your_dataset.csv"  # <-- change this#
-df = pd.read_csv(r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\data\pid_dataset_pidtune.csv")
+df = pd.read_csv(r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\src\data\pid_dataset_multi_ranges.csv")
 
 # === Basic Info ===
 print("✅ Data Overview")
@@ -100,7 +100,9 @@ bins = [0, 1, 10, 100, 1000, 10000, float("inf")]
 labels = ["0–1", "1.1–10", "11–100", "101–1k", "1k–10k", "10k+"]
 
 # Loop over target columns
-for col in ["Kp", "Ki", "Kd"]:
+for col in ["K", "T1", "T2", "Kp", "Ki", "Kd", "ISE", "SSE", 
+            "RiseTime", "SettlingTime", "Overshoot"]:
+    # Your logic here
     print(f"\n=== {col} Range Distribution ===")
     
     # Create bin categories
@@ -126,3 +128,77 @@ for col in ["Kp", "Ki", "Kd"]:
     plt.xlabel(f"{col} Value Range")
     plt.tight_layout()
     plt.show()
+# === Identify K, T1, T2 ranges producing large Kp/Ki/Kd values ===
+thresholds = [100, 1000]
+
+for threshold in thresholds:
+    print(f"\n🔎 Analyzing input parameters for Kp/Ki/Kd above {threshold}")
+    
+    # Select data exceeding the threshold
+    df_high = df[(df["Kp"] > threshold) | (df["Ki"] > threshold) | (df["Kd"] > threshold)]
+    
+    if df_high.empty:
+        print(f"No samples found with Kp/Ki/Kd above {threshold}.")
+        continue
+    
+    # Summary statistics
+    summary_stats = df_high[["K", "T1", "T2"]].describe(percentiles=[0.25, 0.5, 0.75])
+    print(f"\n📌 Summary stats for Kp/Ki/Kd above {threshold}:\n{summary_stats}")
+
+    # Visualize distributions of K, T1, T2 in this subset
+    fig, axes = plt.subplots(1, 3, figsize=(16, 4))
+    params = ["K", "T1", "T2"]
+    for ax, param in zip(axes, params):
+        sns.histplot(df_high[param], bins=30, kde=True, ax=ax)
+        ax.set_title(f"{param} distribution (Kp/Ki/Kd > {threshold})")
+        ax.set_xlabel(param)
+        ax.grid(True)
+
+    plt.tight_layout()
+    plt.show()
+
+categorical_cols = ["PhaseMargin", "DesignFocus", "Bandwidth", "SystemCategory"]
+thresholds = [100, 1000]
+
+for threshold in thresholds:
+    print(f"\n🔎 Categorical Analysis for Kp/Ki/Kd values > {threshold}")
+    
+    df_high = df[(df["Kp"] > threshold) | (df["Ki"] > threshold) | (df["Kd"] > threshold)]
+    
+    if df_high.empty:
+        print(f"No entries found with Kp/Ki/Kd above {threshold}.")
+        continue
+    
+    for cat_col in categorical_cols:
+        print(f"\n📌 Category distribution in '{cat_col}' for gains > {threshold}:")
+        counts = df_high[cat_col].value_counts()
+        percentages = counts / len(df_high) * 100
+        summary_df = pd.DataFrame({
+            "Count": counts,
+            "Percentage (%)": percentages.round(2)
+        })
+        print(summary_df)
+
+        # Optional visualization:
+        plt.figure(figsize=(8, 4))
+        sns.barplot(y=summary_df.index, x=summary_df["Percentage (%)"])
+        plt.title(f"{cat_col} Distribution for Gains > {threshold}")
+        plt.xlabel("Percentage (%)")
+        plt.ylabel(cat_col)
+        plt.tight_layout()
+        plt.show()
+
+thresholds = [100, 1000]
+
+for threshold in thresholds:
+    df_high_kp = df[df["Kp"] > threshold]
+
+    count_t2_zero = (df_high_kp["T2"] == 0).sum()
+    count_t2_gt_zero = (df_high_kp["T2"] > 0).sum()
+
+    total = len(df_high_kp)
+
+    print(f"\n🔎 Analysis of T2 values for Kp > {threshold}:")
+    print(f"Total entries with Kp > {threshold}: {total}")
+    print(f"T2 = 0 count: {count_t2_zero} ({(count_t2_zero / total * 100):.2f}%)")
+    print(f"T2 > 0 count: {count_t2_gt_zero} ({(count_t2_gt_zero / total * 100):.2f}%)")
