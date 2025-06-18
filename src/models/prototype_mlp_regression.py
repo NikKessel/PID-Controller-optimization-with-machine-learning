@@ -14,7 +14,7 @@ from sklearn.compose import TransformedTargetRegressor
 import seaborn as sns
 
 # === 1. Load and prepare data (simplified for new column structure) ===
-df = pd.read_csv(r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\data\pid_dataset_pidtune.csv")
+df = pd.read_csv(r"D:\BA\PID-Controller-optimization-with-machine-learning\src\data\pid_dataset_pidtune.csv")
 
 df = df.dropna(subset=["K", "T1", "T2", "Kp", "Ki", "Kd"])
 
@@ -103,8 +103,8 @@ print("MSE:", mse)
 print("R²:", r2)
 
 # === 7. Save Plots and Model ===
-#output_dir = rf"D:\BA\PID-Controller-optimization-with-machine-learning\models\mlp\pid_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-output_dir = rf"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\models\mlp\pid_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+output_dir = rf"D:\BA\PID-Controller-optimization-with-machine-learning\models\mlp\pid_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+#output_dir = rf"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\models\mlp\pid_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
 #output_dir = rf"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\models\mlp\pid_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 os.makedirs(output_dir, exist_ok=True)

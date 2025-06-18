@@ -9,7 +9,7 @@ from sklearn.decomposition import PCA
 
 # === Load CSV ===
 #file_path = "your_dataset.csv"  # <-- change this#
-df = pd.read_csv(r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\src\data\pid_dataset_multi_ranges.csv")
+df = pd.read_csv(r"D:\BA\PID-Controller-optimization-with-machine-learning\src\data\pid_dataset_multi_ranges.csv")
 
 # === Basic Info ===
 print("✅ Data Overview")

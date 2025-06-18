@@ -1,0 +1,30 @@
+[19:53:22]  Loading dataset...
+[19:53:22]  Dataset loaded with 1000 entries.
+[19:53:22]  Output directory created: D:\BA\PID-Controller-optimization-with-machine-learning\models\GPR\gpr_model_20250618_195322
+[19:53:22] 
+ Training GPR model for target: Kp
+[19:53:22]     Samples after filtering: 1000
+[19:53:22]     Fitting model...
+[19:53:29]     Predicting with uncertainty...
+[19:53:29]     0 outliers removed from metrics (>1.72)
+[19:53:29]     Model saved.
+[19:53:29]     Plot saved.
+[19:53:29] 
+ Training GPR model for target: Ki
+[19:53:29]     Samples after filtering: 1000
+[19:53:29]     Fitting model...
+[19:53:34]     Predicting with uncertainty...
+[19:53:34]     0 outliers removed from metrics (>0.36)
+[19:53:34]     Model saved.
+[19:53:34]     Plot saved.
+[19:53:34] 
+ Training GPR model for target: Kd
+[19:53:34]     Samples after filtering: 1000
+[19:53:34]     Fitting model...
+[19:53:43]     Predicting with uncertainty...
+[19:53:43]     7 outliers removed from metrics (>12.37)
+[19:53:43]     Model saved.
+[19:53:43]     Plot saved.
+[19:53:43]  Saving summary metrics and predictions...
+[19:53:43]  GPR training complete. All results saved.
+[19:53:43]  Final results in: D:\BA\PID-Controller-optimization-with-machine-learning\models\GPR\gpr_model_20250618_195322

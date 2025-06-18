@@ -1,14 +1,15 @@
 % === Configuration ===
 system_definitions = {
-    % Label             Kmin   Kmax     T1min   T1max     T2min   T2max
-    "fast",       0.1,   1.0,     0.1,   5,      0.1,   5;
-    "Medium",           1.0,  10.0,     5.0,   50.0,      2.0,   50.0;
-    "Slow",            10.0, 100.0,    20.0,  100.0,     10.0,  100.0;
-    "Wide",             0.5, 100.0,     0.01, 100.0,     0.01, 100.0;
-
+    % Label      Kmin  Kmax  T1min  T1max  T2min  T2max
+    "VeryFast",  1.0,  10.0, 0.01,  1.0,   0.005, 0.5;
+    "Fast",      0.8,  8.0,  0.5,   5.0,   0.1,   2.0;
+    "Medium",    2.0,  20.0, 2.0,   15.0,  0.5,   8.0;
+    "Slow",      3.0,  30.0, 10.0,  40.0,  2.0,   15.0;
+    "VerySlow",  5.0,  15.0, 30.0,  120.0, 5.0,   30.0;
+    "HighGain",  15.0, 80.0, 1.0,   10.0,  0.2,   3.0;
 };
 
-num_per_type = 3000;    % Samples per system type
+num_per_type = 200;    % Samples per system type
 T_final = 50;         % Simulation time
 results = {}; all_t = {}; all_y = {};
 row = 1;
