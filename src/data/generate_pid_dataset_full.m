@@ -1,113 +1,115 @@
 % === Configuration ===
-num_samples = 100;          % Total number of systems
-T_final = 50;               % Simulation time
-results = {};               % To store metrics
-all_t = {}; all_y = {};     % To store responses for plotting
-row = 1;                    % Row index for valid data only
+system_definitions = {
+    % Label             Kmin   Kmax     T1min   T1max     T2min   T2max
+    "Toothbrush",       0.1,   1.0,     0.01,   0.1,      0.01,   0.05;
+    "fast",       0.1,   1.0,     0.1,   5,      0.1,   5;
+    "Medium",           1.0,  10.0,     5.0,   50.0,      2.0,   50.0;
+    "Slow",            10.0, 100.0,    20.0,  100.0,     10.0,  100.0;
+    "Wide",             0.5, 100.0,     0.01, 100.0,     0.01, 100.0;
 
-for i = 1:num_samples
-    try
-        % === Randomly choose system type ===
-        system_type = randi([1, 2]);  % 1 = PT1, 2 = PT2
+};
 
-        % === Generate system ===
-        K  = rand() * 10 + 0.5;      % Gain K ∈ [0.5, 10]
+num_per_type = 3000;    % Samples per system type
+T_final = 50;         % Simulation time
+results = {}; all_t = {}; all_y = {};
+row = 1;
 
-        if system_type == 1
-            % --- PT1 system ---
-            T1 = rand() * 49 + 1;
-            T2 = 0;  % dummy for PT1
-            num = K;
-            den = conv([T1 1], [1]);
-            sys_type_str = "PT1";
-        else
-            % --- PT2 system ---
-            T1 = rand() * 49 + 1;
-            T2 = rand() * 49 + 1;
+failure_count = containers.Map();  % To log failures per system type
+
+for s = 1:size(system_definitions,1)
+    type_name = system_definitions{s,1};
+    Kmin = system_definitions{s,2};  Kmax = system_definitions{s,3};
+    T1min = system_definitions{s,4}; T1max = system_definitions{s,5};
+    T2min = system_definitions{s,6}; T2max = system_definitions{s,7};
+
+    count = 0;  % Successful samples
+    attempts = 0;  % Total attempts per type
+    failure_count(type_name) = 0;  % Init
+
+    while count < num_per_type
+        try
+            % === Generate random system ===
+            K  = rand() * (Kmax - Kmin) + Kmin;
+            T1 = rand() * (T1max - T1min) + T1min;
+            T2 = rand() * (T2max - T2min) + T2min;
+
             num = K;
             den = conv([T1 1], [T2 1]);
-            sys_type_str = "PT2";
-        end
+            G = tf(num, den);
+            % === Random PID tuning options ===
+            PM_options = [30, 45, 60, 75];
+            focus_options = {'reference-tracking', 'disturbance-rejection'};
+            PM = PM_options(randi(length(PM_options)));
+            focus = focus_options{randi(2)};
+            log_bw = rand() * (log10(5) - log10(0.5)) + log10(0.5);
+            bw = 10^log_bw;
 
-        G = tf(num, den);
+            C = pidtune(G, 'PID', bw, ...
+                pidtuneOptions('DesignFocus', focus, 'PhaseMargin', PM));
 
-        % === Randomize PID tuning options ===
-        PM_options = [30, 45, 60, 75];
-        focus_options = {'reference-tracking', 'disturbance-rejection'};
-        PM = PM_options(randi(length(PM_options)));
-        focus = focus_options{randi(2)};
-        log_bw = rand() * (log10(5) - log10(0.5)) + log10(0.5);
-        bw = 10^log_bw;
+            % === Skip invalid controllers ===
+            if C.Kp == 0 || C.Ki == 0
+                continue;
+            end
 
-        opts = pidtuneOptions('DesignFocus', focus, 'PhaseMargin', PM);
-        C = pidtune(G, 'PID', bw, opts);
 
-        % === Check if PID gains are valid ===
-        if any([C.Kp, C.Ki, C.Kd] <= 0) || any(isnan([C.Kp, C.Ki, C.Kd]))
-            warning("Skipping invalid PID gains (zero or NaN)");
+
+            % === Simulate ===
+            sys_cl = feedback(C * G, 1);
+            t = linspace(0, T_final, 1000);
+            [y, t] = step(sys_cl, t);
+            info = stepinfo(y, t);
+            e = 1 - y;
+            ISE = trapz(t, e.^2);
+            SSE = abs(e(end));
+
+            % === Store results ===
+            results{row,1}  = K;
+            results{row,2}  = T1;
+            results{row,3}  = T2;
+            results{row,4}  = C.Kp;
+            results{row,5}  = C.Ki;
+            results{row,6}  = C.Kd;
+            results{row,7}  = ISE;
+            results{row,8}  = SSE;
+            results{row,9}  = info.RiseTime;
+            results{row,10} = info.SettlingTime;
+            results{row,11} = info.Overshoot;
+            results{row,12} = PM;
+            results{row,13} = focus;
+            results{row,14} = bw;
+            results{row,15} = type_name;
+
+            all_t{row} = t;
+            all_y{row} = y;
+            fprintf("✅ %s %d → Row %d: Kp=%.2f, Ki=%.2f, Kd=%.2f, ISE=%.2f\n", ...
+                    type_name, i, row, C.Kp, C.Ki, C.Kd, ISE);
+            row = row + 1;
+            count = count + 1;
+
+
+        catch ME
+            disp(['❌ Sample ', num2str(i), ' failed: ', ME.message]);
             continue;
         end
-
-        Kp = C.Kp;
-        Ki = C.Ki;
-        Kd = C.Kd;
-
-        % === Simulate closed-loop system ===
-        sys_cl = feedback(C * G, 1);
-        t = linspace(0, T_final, 1000);
-        [y, t] = step(sys_cl, t);
-
-        info = stepinfo(y, t);
-        e = 1 - y;
-        ISE = trapz(t, e.^2);
-        SSE = abs(e(end));
-
-        % === Store results ===
-        results{row,1}  = K;
-        results{row,2}  = T1;
-        results{row,3}  = T2;
-        results{row,4}  = Kp;
-        results{row,5}  = Ki;
-        results{row,6}  = Kd;
-        results{row,7}  = ISE;
-        results{row,8}  = SSE;
-        results{row,9}  = info.RiseTime;
-        results{row,10} = info.SettlingTime;
-        results{row,11} = info.Overshoot;
-        results{row,12} = PM;
-        results{row,13} = focus;
-        results{row,14} = bw;
-        results{row,15} = sys_type_str;
-
-        all_y{row} = y;
-        all_t{row} = t;
-
-        % Show status
-        fprintf("✅ Sample %d → Row %d: Kp=%.3f, Ki=%.4f, Kd=%.3f, ISE=%.2f\n", ...
-                i, row, Kp, Ki, Kd, ISE);
-        row = row + 1;
-
-    catch ME
-        disp(['❌ Sample ', num2str(i), ' failed: ', ME.message]);
-        continue;
     end
 end
 
-% === Save to table ===
+% === Save results ===
 headers = {'K','T1','T2','Kp','Ki','Kd','ISE','SSE','RiseTime','SettlingTime','Overshoot', ...
-           'PhaseMargin', 'DesignFocus', 'Bandwidth', 'SystemType'};
+           'PhaseMargin','DesignFocus','Bandwidth','SystemCategory'};
 T = cell2table(results, 'VariableNames', headers);
-writetable(T, 'pid_dataset_pidtune.csv');
-disp('✅ Dataset saved to pid_dataset_pidtune.csv');
+writetable(T, 'pid_dataset_multi_ranges.csv');
+disp('✅ Dataset saved to pid_dataset_multi_ranges.csv');
 
-% === Plot all step responses ===
+% === Plot step responses ===
 figure;
 hold on;
 for i = 1:length(all_y)
-    plot(all_t{i}, all_y{i}, 'Color', [0, 0.5, 1, 0.25]);
+    plot(all_t{i}, all_y{i}, 'Color', [0, 0.5, 1, 0.2]);
 end
 yline(1.0, 'k--', 'Step Input');
-title('All Step Responses from PID Tuned Systems');
+title('Step Responses from Multi-Range PID-Tuned Systems');
 xlabel('Time (s)');
 ylabel('Output y(t)');
 grid on;
