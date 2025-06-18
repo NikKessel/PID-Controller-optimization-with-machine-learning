@@ -13,7 +13,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 # === 1. Load and preprocess data ===
 #csv_path = r"D:\BA\PID-Controller-optimization-with-machine-learning\pid_dataset_control.csv"
 #df = pd.read_csv(r"D:\BA\PID-Controller-optimization-with-machine-learning\data\pid_dataset_control.csv")
-df = pd.read_csv(r"D:\BA\PID-Controller-optimization-with-machine-learning\data\pid_dataset_pidtune.csv")
+df = pd.read_csv(filepath_or_buffer=r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\data\pid_dataset_pidtune.csv")
 #df = pd.read_csv(csv_path)
 print("Columns in df:", df.columns.tolist())
 df = df.dropna(subset=["K", "T1", "T2", "Kp", "Ki", "Kd"])
@@ -34,7 +34,16 @@ engineered_features: list[str] = ["T1_T2_ratio", "K_T1", "log_Td"]
 features = core_features 
 targets = ["Kp", "Ki", "Kd"]
 #df_good = df[df["Label"] == "good"].copy()
+for target in ["Kp", "Ki", "Kd"]:
+    df = df[df[target] <= 100]
+epsilon = 1e-6
 
+df["Kp_log"] = np.log10(df["Kp"] + epsilon)
+df["Ki_log"] = np.log10(df["Ki"] + epsilon)
+df["Kd_log"] = np.log10(df["Kd"] + epsilon)
+
+# Use these as targets
+targets = ["Kp_log", "Ki_log", "Kd_log"]
 df_good = df
 X = df_good[features]
 y = df_good[targets]
@@ -69,24 +78,30 @@ model = grid.best_estimator_
 # === 5. Predictions ===
 
 
-y_pred = model.predict(X_test)
+#y_pred = model.predict(X_test)
+# After model.predict()
+y_pred_log = model.predict(X_test)
+
+# Convert back to original scale
+y_pred = np.power(10, y_pred_log)  # or: 10 ** y_pred_log
+y_true = np.power(10, y_test.to_numpy())
 
 # === 6. Metrics ===
 metrics = {}
-for i, var in enumerate(targets):
-    y_true = y_test.iloc[:, i]
+for i, var in enumerate(["Kp", "Ki", "Kd"]):  # original names
     y_hat = y_pred[:, i]
+    y_real = y_true[:, i]
     metrics[var] = {
-        "MAE": mean_absolute_error(y_true, y_hat),
-        "MSE": mean_squared_error(y_true, y_hat),
-        "R2": r2_score(y_true, y_hat)
+        "MAE": mean_absolute_error(y_real, y_hat),
+        "MSE": mean_squared_error(y_real, y_hat),
+        "R2": r2_score(y_real, y_hat)
     }
 
 metrics_df = pd.DataFrame(metrics).T
 
 # === 7. Save All Outputs ===
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-output_dir = fr"D:\BA\PID-Controller-optimization-with-machine-learning\models\xgboost\pid_model_{timestamp}"
+output_dir = fr"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\models\xgboost\pid_model_{timestamp}"
 #output_dir = rf"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\models\xgboost\pid_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
 os.makedirs(output_dir, exist_ok=True)
@@ -118,24 +133,6 @@ for i, param in enumerate(["Kp", "Ki", "Kd"]):
 plt.tight_layout()
 plt.savefig(os.path.join(output_dir, "true_vs_predicted_all.png"))
 
-# === 9. Residual Plots for Ki and Kd ===
-residuals_ki = y_test["Ki"] - y_pred[:, 1]
-residuals_kd = y_test["Kd"] - y_pred[:, 2]
-
-fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-axes[0].scatter(y_test["Ki"], residuals_ki, alpha=0.6)
-axes[0].axhline(0, color='r', linestyle='--')
-axes[0].set_xlabel("True Ki")
-axes[0].set_ylabel("Residual (True - Predicted)")
-axes[0].set_title("Residual Plot for Ki")
-axes[0].grid(True)
-
-axes[1].scatter(y_test["Kd"], residuals_kd, alpha=0.6)
-axes[1].axhline(0, color='r', linestyle='--')
-axes[1].set_xlabel("True Kd")
-axes[1].set_ylabel("Residual (True - Predicted)")
-axes[1].set_title("Residual Plot for Kd")
-axes[1].grid(True)
 
 plt.tight_layout()
 plt.savefig(os.path.join(output_dir, "residual_plots_ki_kd.png"))

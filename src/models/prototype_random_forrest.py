@@ -10,14 +10,16 @@ from sklearn.model_selection import train_test_split, KFold, cross_val_score
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 # === 1. Load Data ===
-csv_path = r"D:\BA\PID-Controller-optimization-with-machine-learning\pid_dataset_control.csv"
+csv_path = r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\data\pid_dataset_pidtune.csv"
+
 df = pd.read_csv(csv_path)
 
 # === 2. Filter 'good' labels and define features/targets ===
-df_good = df[df["Label"] == "good"].copy()
-features = ["K", "T1", "T2", "Td"]
+features = ["K", "T1", "T2" ]
 targets = ["Kp", "Ki", "Kd"]
-
+for target in ["Kp", "Ki", "Kd"]:
+    df = df[df[target] <= 1000]
+df_good = df
 X = df_good[features].fillna(0)
 y = df_good[targets]
 
@@ -57,7 +59,7 @@ plt.tight_layout()
 
 # === 8. Save All Results ===
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-output_dir = fr"D:\BA\PID-Controller-optimization-with-machine-learning\models\randomforrest\pid_model_{timestamp}"
+output_dir = fr"C:\BA\PID-Controller-optimization-with-machine-learning\models\randomforrest\pid_model_{timestamp}"
 os.makedirs(output_dir, exist_ok=True)
 
 # Save model
