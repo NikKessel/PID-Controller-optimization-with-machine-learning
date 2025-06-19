@@ -24,7 +24,8 @@ df["K_T1"] = df["K"] * df["T1"]
 df["K_T2"] = df["K"] * df["T2"]
 df["T1_T2_ratio"] = df["T1"] / (df["T2"] + 1e-3)
 
-features = ["K", "T1", "T2", "K_T1", "K_T2", "T1_T2_ratio"]
+#features = ["K", "T1", "T2", "K_T1", "K_T2", "T1_T2_ratio"]
+features = ["K", "T1", "T2"]
 targets = ["Kp_log", "Ki_log", "Kd_log"]
 
 # Output directory

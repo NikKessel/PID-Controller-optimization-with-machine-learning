@@ -1,6 +1,6 @@
 % === Configuration ===
-num_samples = 20000;       % Total number of systems
-T_final = 500;              % Simulation time
+num_samples = 1000;       % Total number of systems
+T_final = 10;              % Simulation time
 results = {};               % Store metrics
 all_t = {}; all_y = {};     % Store responses
 row = 1;
@@ -11,15 +11,15 @@ for i = 1:num_samples
         is_pt1 = rand() < 0.5;
 
         % === 2. Generate random system ===
-        K  = rand() * 100 + 0.3;         % [0.5, 100]
-        T1 = rand() * 200 + 0.01;       % [0.01, 100]
+        K  = rand() * 10 + 0.1;         % [0.5, 100]
+        T1 = rand() * 1 + 0.001;       % [0.01, 100]
 
         if is_pt1
             T2 = 0;
             den = [T1 1];                 % PT1
             system_type = "PT1";
         else
-            T2 = rand() * 200 + 0.01;   % [0.01, 100]
+            T2 = rand() * 1 + 0.001;   % [0.01, 100]
             den = conv([T1 1], [T2 1]);   % PT2
             system_type = "PT2";
         end
