@@ -29,10 +29,16 @@ df = df[df["Kd"] < 100]
 
 
 # === Log-transform targets ===
-df["ISE_log"] = np.log10(df["ISE"] + 1e-3)
-df["Overshoot_log"] = np.log10(df["Overshoot"] + 1e-3)
-df["SettlingTime_log"] = np.log10(df["SettlingTime"] + 1e-3)
-df["RiseTime_log"] = np.log10(df["RiseTime"] + 1e-3)
+#df["ISE_log"] = np.log10(df["ISE"] + 1e-3)
+#df["Overshoot_log"] = np.log10(df["Overshoot"] + 1e-3)
+#df["SettlingTime_log"] = np.log10(df["SettlingTime"] + 1e-3)
+#df["RiseTime_log"] = np.log10(df["RiseTime"] + 1e-3)
+# New code using natural log1p transform
+df["ISE_log"] = np.log1p(df["ISE"])            # log(1 + ISE)
+df["Overshoot_log"] = np.log1p(df["Overshoot"])
+df["SettlingTime_log"] = np.log1p(df["SettlingTime"])
+df["RiseTime_log"] = np.log1p(df["RiseTime"])
+
 
 # Scale overshoot
 
