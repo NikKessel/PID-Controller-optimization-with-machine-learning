@@ -14,6 +14,17 @@ from datetime import datetime
 import joblib
 import matplotlib.pyplot as plt
 
+
+def inverse_log1p_transform(pred_log):
+    """
+    Inverse transform of y = log1p(original_value) = log(1 + original_value).
+    Ensures no negative values after inversion.
+    """
+    pred = np.expm1(pred_log)  # inverse of log1p
+    pred = np.clip(pred, 0, None)  # clamp negative predictions to zero
+    return pred
+
+
 # === Load dataset ===
 df = pd.read_csv(r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\src\data\pid_dataset_pidtune.csv")
 df = df.dropna(subset=["K", "T1", "T2", "Kp", "Ki", "Kd", "ISE", "Overshoot", "SettlingTime", "RiseTime"])
@@ -35,7 +46,7 @@ df = df[df["Kd"] < 100]
 #df["RiseTime_log"] = np.log10(df["RiseTime"] + 1e-3)
 # New code using natural log1p transform
 df["ISE_log"] = np.log1p(df["ISE"])            # log(1 + ISE)
-df["Overshoot_log"] = np.log1p(df["Overshoot"])
+#df["Overshoot_log"] = np.log1p(df["Overshoot"])
 df["SettlingTime_log"] = np.log1p(df["SettlingTime"])
 df["RiseTime_log"] = np.log1p(df["RiseTime"])
 
@@ -114,25 +125,40 @@ for target in targets:
     likelihood.eval()
     with torch.no_grad():
         preds = likelihood(model(X_test_tensor))
-        y_pred = preds.mean.numpy()
+        y_pred_log = preds.mean.numpy()  # model prediction (log-domain or original scale)
         y_std = preds.variance.sqrt().numpy()
 
-    # === Log metrics ===
-    r2 = r2_score(y_test, y_pred)
-    mae = mean_absolute_error(y_test, y_pred)
+        # Conditional inverse transform based on target name
+        if "log" in target:
+            y_pred = np.expm1(y_pred_log)  # inverse log1p transform
+        else:
+            y_pred = y_pred_log  # no transform for original scale target
+
+        y_pred = np.clip(y_pred, 0, None)  # clamp negatives to zero (if needed)
+
+        y_test_val = y_test.values if not isinstance(y_test, np.ndarray) else y_test
+        if "log" in target:
+            y_test_inv = np.expm1(y_test_val)  # inverse transform ground truth
+        else:
+            y_test_inv = y_test_val  # no transform
+
+    # Compute metrics on consistent scale
+    r2 = r2_score(y_test_inv, y_pred)
+    mae = mean_absolute_error(y_test_inv, y_pred)
     metrics[target] = {"R2": r2, "MAE": mae}
 
-    # === Plot
-    plt.figure(figsize=(6, 5))
-    plt.errorbar(y_test, y_pred, yerr=y_std, fmt='o', alpha=0.6, label="Predictions ±σ")
-    plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', label="Ideal")
+    # Plotting using y_test_inv and y_pred
+    plt.errorbar(y_test_inv, y_pred, yerr=y_std, fmt='o', alpha=0.6, label="Predictions ±σ")
+    plt.plot([y_test_inv.min(), y_test_inv.max()], [y_test_inv.min(), y_test_inv.max()], 'r--', label="Ideal")
     plt.xlabel("True")
     plt.ylabel("Predicted")
-    plt.title(f"{target}: True vs Predicted (log-domain)")
+    plt.title(f"{target}: True vs Predicted (original scale)")
     plt.legend()
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, f"{target}_plot.png"))
     plt.close()
+
+
 
     # === Save
     torch.save(model.state_dict(), os.path.join(output_dir, f"{target}_model.pth"))

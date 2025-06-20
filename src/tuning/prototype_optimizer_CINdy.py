@@ -28,7 +28,7 @@ class VariationalGP(gpytorch.models.ApproximateGP):
         return gpytorch.distributions.MultivariateNormal(mean, covar)
 
 # === Load trained surrogates ===
-MODEL_DIR = r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\models\DGPSurrogate\surrogate_perf_20250620_130054"
+MODEL_DIR = r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\models\DGPSurrogate\surrogate_perf_20250620_140556"
 
 def load_model(param: str):
     input_dim = 6
@@ -137,7 +137,7 @@ def optimize_pid_scipy(plant, weights, budget=100):
             Kp, Ki, Kd = params
             return surrogate_cost([Kp, Ki, Kd], plant, weights)
         
-        bounds = [(0.01, 2.0), (0.001, 2), (0.0, 2)]  # Kp, Ki, Kd bounds
+        bounds = [(0.01, 3.0), (0.001, 3), (0.0, 3)]  # Kp, Ki, Kd bounds
         
         result = differential_evolution(
             cost_fn_scipy, 
@@ -160,7 +160,7 @@ def optimize_pid_scipy(plant, weights, budget=100):
 
 # === Example usage ===
 if __name__ == "__main__":
-    plant = (0.5, 50.0, 4.0)  # K, T1, T2
+    plant = (35, 50.0, 40.0)  # K, T1, T2
     weights = {"ISE": 1.0, "Overshoot": 0.5, "SettlingTime": 0.2, "RiseTime": 0.1}
     
     try:

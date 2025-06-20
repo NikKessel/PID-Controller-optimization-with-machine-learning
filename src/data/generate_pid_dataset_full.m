@@ -1,5 +1,5 @@
 % === Configuration ===
-num_samples = 10000;           % Total number of systems
+num_samples = 100000;           % Total number of systems
 T_final = 3000;              % Simulation time
 results = {};                % Store metrics
 all_t = {}; all_y = {};      % Store responses
@@ -7,21 +7,28 @@ row = 1;
 
 % === System Type Definitions ===
 system_definitions = {
-    % Label        Kmin  Kmax   T1min  T1max   T2min  T2max
-    "VeryFast",    0.5,   5.0,   0.01,  0.5,    0.005, 0.2;
-    "Fast",        0.8,   8.0,   0.1,   2.0,    0.01,  2.0;
-    "Medium",      1.0,  15.0,   1.0,   10.0,   0.1,   10.0;
-    "Slow",        2.0,  20.0,   5.0,   30.0,   5.0,   30.0;
-    "VerySlow",    2.0,  10.0,  20.0,  200.0,  20.0, 200.0;
-    "HighGain",   10.0, 100.0,   0.5,   10.0,   0.1,   2.0;
+    % Label           Kmin  Kmax   T1min  T1max   T2min  T2max
+    "VeryFastt",       15,   50,   0.1,   3,     0.1,   3;
+    "VeryFast",        0.5,  5.0,  0.01,  0.5,   0.01,  0.5;
+    "Fast",            0.8,  8.0,  0.1,   2.0,   0.1,   2.0;
+    "Medium",          1.0,  15.0, 1.0,   10.0,  1.0,   10.0;
+    "Slow",            2.0,  20.0, 5.0,   30.0,  5.0,   30.0;
+    "VerySlow",        2.0,  10.0, 20.0,  200.0, 20.0,  200.0;
+    "UltraSlow",       0.1,  5.0,  100.0, 500.0, 100.0, 500.0;
+    "HighGain",        10.0, 100.0,0.5,   10.0,  0.5,   10.0;
+    "ExtremeGain",     50.0, 200.0,0.1,   5.0,   0.1,   5.0;
+    "LowGain",         0.01, 0.5,  0.1,   20.0,  0.1,   20.0;
+    "DeadTimeDominated",0.5, 10.0, 0.1,   10.0,  0.1,   10.0;
 };
+
+
 num_types = size(system_definitions, 1);
 
 % === PIDTUNE VARIATION RANGES ===
 pidtune_ranges = struct( ...
     'wc_factor_min',     0.1, ...
-    'wc_factor_max',     10.0, ...
-    'phase_margin_min',  25, ...
+    'wc_factor_max',     15.0, ...
+    'phase_margin_min',  15, ...
     'phase_margin_max',  60, ...
     'design_focus',      {{'reference-tracking', 'balanced', 'disturbance-rejection'}} ...
 );
