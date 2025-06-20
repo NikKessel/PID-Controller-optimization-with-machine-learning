@@ -19,10 +19,14 @@ df = pd.read_csv(r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization
 df = df.dropna(subset=["K", "T1", "T2", "Kp", "Ki", "Kd", "ISE", "Overshoot", "SettlingTime", "RiseTime"])
 
 # === Filter outliers ===
-df = df[df["ISE"] < 1000]
+df = df[df["ISE"] < 100]
 df = df[df["SettlingTime"] < 500]
 df = df[df["RiseTime"] < 300]
 df = df[df["Overshoot"] > 0.03]
+df = df[df["Kp"] < 100]
+df = df[df["Ki"] < 100]
+df = df[df["Kd"] < 100]
+
 
 # === Log-transform targets ===
 df["ISE_log"] = np.log10(df["ISE"] + 1e-3)
@@ -31,10 +35,9 @@ df["SettlingTime_log"] = np.log10(df["SettlingTime"] + 1e-3)
 df["RiseTime_log"] = np.log10(df["RiseTime"] + 1e-3)
 
 # Scale overshoot
-df["Overshoot_scaled"] = df["Overshoot"] * 10
 
 features = ["K", "T1", "T2", "Kp", "Ki", "Kd"]
-targets = ["ISE_log", "Overshoot_scaled", "SettlingTime_log", "RiseTime_log"]
+targets = ["ISE_log", "Overshoot", "SettlingTime_log", "RiseTime_log"]
 
 # === Output directory ===
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

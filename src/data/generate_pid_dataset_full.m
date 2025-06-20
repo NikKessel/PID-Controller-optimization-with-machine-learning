@@ -1,5 +1,5 @@
 % === Configuration ===
-num_samples = 100;           % Total number of systems
+num_samples = 10000;           % Total number of systems
 T_final = 3000;              % Simulation time
 results = {};                % Store metrics
 all_t = {}; all_y = {};      % Store responses
@@ -20,9 +20,9 @@ num_types = size(system_definitions, 1);
 % === PIDTUNE VARIATION RANGES ===
 pidtune_ranges = struct( ...
     'wc_factor_min',     0.1, ...
-    'wc_factor_max',     2.0, ...
-    'phase_margin_min',  45, ...
-    'phase_margin_max',  80, ...
+    'wc_factor_max',     10.0, ...
+    'phase_margin_min',  25, ...
+    'phase_margin_max',  60, ...
     'design_focus',      {{'reference-tracking', 'balanced', 'disturbance-rejection'}} ...
 );
 
@@ -182,7 +182,138 @@ T = cell2table(results, 'VariableNames', headers);
 writetable(T, 'pid_dataset_pidtune.csv');
 fprintf('✅ Dataset saved to pid_dataset_pidtune.csv with %d samples\n', height(T));
 
-% === 9. Plot Step Responses ===
+% === 9. Statistical Analysis ===
+fprintf('\n=== STATISTICAL ANALYSIS ===\n');
+
+% Convert results to numerical matrix for easy analysis
+numeric_cols = [1:11, 14, 15]; % K, T1, T2, Kp, Ki, Kd, ISE, SSE, RiseTime, SettlingTime, Overshoot, wc, PhaseMargin
+numeric_data = cell2mat(results(:, numeric_cols));
+metric_names = {'K', 'T1', 'T2', 'Kp', 'Ki', 'Kd', 'ISE', 'SSE', 'RiseTime', 'SettlingTime', 'Overshoot', 'wc', 'PhaseMargin'};
+
+fprintf('\n--- SYSTEM PARAMETERS ---\n');
+fprintf('%-15s %8s %8s %8s %8s %8s\n', 'Parameter', 'Mean', 'Std', 'Min', 'Max', 'Median');
+fprintf('%s\n', repmat('-', 1, 70));
+for i = 1:3  % K, T1, T2
+    data = numeric_data(:, i);
+    fprintf('%-15s %8.3f %8.3f %8.3f %8.3f %8.3f\n', ...
+        metric_names{i}, mean(data), std(data), min(data), max(data), median(data));
+end
+
+fprintf('\n--- PID CONTROLLER GAINS ---\n');
+fprintf('%-15s %8s %8s %8s %8s %8s\n', 'Gain', 'Mean', 'Std', 'Min', 'Max', 'Median');
+fprintf('%s\n', repmat('-', 1, 70));
+for i = 4:6  % Kp, Ki, Kd
+    data = numeric_data(:, i);
+    fprintf('%-15s %8.3f %8.3f %8.3f %8.3f %8.3f\n', ...
+        metric_names{i}, mean(data), std(data), min(data), max(data), median(data));
+end
+
+fprintf('\n--- PERFORMANCE METRICS ---\n');
+fprintf('%-15s %8s %8s %8s %8s %8s\n', 'Metric', 'Mean', 'Std', 'Min', 'Max', 'Median');
+fprintf('%s\n', repmat('-', 1, 70));
+for i = 7:11  % ISE, SSE, RiseTime, SettlingTime, Overshoot
+    data = numeric_data(:, i);
+    fprintf('%-15s %8.3f %8.3f %8.3f %8.3f %8.3f\n', ...
+        metric_names{i}, mean(data), std(data), min(data), max(data), median(data));
+end
+
+fprintf('\n--- TUNING PARAMETERS ---\n');
+fprintf('%-15s %8s %8s %8s %8s %8s\n', 'Parameter', 'Mean', 'Std', 'Min', 'Max', 'Median');
+fprintf('%s\n', repmat('-', 1, 70));
+for i = 12:13  % wc, PhaseMargin
+    data = numeric_data(:, i);
+    fprintf('%-15s %8.3f %8.3f %8.3f %8.3f %8.3f\n', ...
+        metric_names{i}, mean(data), std(data), min(data), max(data), median(data));
+end
+
+% === System Type Distribution ===
+fprintf('\n--- SYSTEM TYPE DISTRIBUTION ---\n');
+system_types = results(:, 12);  % SystemType column
+% Convert strings to cell array of char vectors for compatibility
+if iscell(system_types) && ~isempty(system_types)
+    system_types_char = cellfun(@char, system_types, 'UniformOutput', false);
+else
+    system_types_char = system_types;
+end
+[unique_types, ~, idx] = unique(system_types_char);
+type_counts = accumarray(idx, 1);
+fprintf('%-20s %8s %8s\n', 'System Type', 'Count', 'Percent');
+fprintf('%s\n', repmat('-', 1, 40));
+for i = 1:length(unique_types)
+    fprintf('%-20s %8d %8.1f%%\n', unique_types{i}, type_counts(i), 100*type_counts(i)/length(system_types));
+end
+
+% === System Category Distribution ===
+fprintf('\n--- SYSTEM CATEGORY DISTRIBUTION ---\n');
+system_categories = results(:, 13);  % SystemCategory column
+% Convert strings to cell array of char vectors for compatibility
+if iscell(system_categories) && ~isempty(system_categories)
+    system_categories_char = cellfun(@char, system_categories, 'UniformOutput', false);
+else
+    system_categories_char = system_categories;
+end
+[unique_cats, ~, idx] = unique(system_categories_char);
+cat_counts = accumarray(idx, 1);
+fprintf('%-20s %8s %8s\n', 'Category', 'Count', 'Percent');
+fprintf('%s\n', repmat('-', 1, 40));
+for i = 1:length(unique_cats)
+    fprintf('%-20s %8d %8.1f%%\n', unique_cats{i}, cat_counts(i), 100*cat_counts(i)/length(system_categories));
+end
+
+% === Design Focus Distribution ===
+fprintf('\n--- DESIGN FOCUS DISTRIBUTION ---\n');
+design_focus = results(:, 16);  % DesignFocus column
+% Convert strings to cell array of char vectors for compatibility
+if iscell(design_focus) && ~isempty(design_focus)
+    design_focus_char = cellfun(@char, design_focus, 'UniformOutput', false);
+else
+    design_focus_char = design_focus;
+end
+[unique_focus, ~, idx] = unique(design_focus_char);
+focus_counts = accumarray(idx, 1);
+fprintf('%-25s %8s %8s\n', 'Design Focus', 'Count', 'Percent');
+fprintf('%s\n', repmat('-', 1, 45));
+for i = 1:length(unique_focus)
+    fprintf('%-25s %8d %8.1f%%\n', unique_focus{i}, focus_counts(i), 100*focus_counts(i)/length(design_focus));
+end
+
+% === Correlation Analysis ===
+fprintf('\n--- CORRELATION ANALYSIS (Performance Metrics) ---\n');
+perf_data = numeric_data(:, 7:11);  % ISE, SSE, RiseTime, SettlingTime, Overshoot
+perf_names = {'ISE', 'SSE', 'RiseTime', 'SettlingTime', 'Overshoot'};
+corr_matrix = corrcoef(perf_data);
+
+fprintf('Correlation Matrix:\n');
+fprintf('%12s', '');
+for i = 1:length(perf_names)
+    fprintf('%12s', perf_names{i});
+end
+fprintf('\n');
+for i = 1:length(perf_names)
+    fprintf('%12s', perf_names{i});
+    for j = 1:length(perf_names)
+        fprintf('%12.3f', corr_matrix(i,j));
+    end
+    fprintf('\n');
+end
+
+% === Quality Assessment ===
+fprintf('\n--- QUALITY ASSESSMENT ---\n');
+% Define "good" performance criteria
+good_overshoot = sum(numeric_data(:, 11) < 10);  % Overshoot < 10%
+good_ise = sum(numeric_data(:, 7) < 10);          % ISE < 1
+good_settling = sum(numeric_data(:, 10) < 100);  % SettlingTime < 100s
+good_rise = sum(numeric_data(:, 9) < 50);        % RiseTime < 50s
+
+total_samples = size(results, 1);
+fprintf('Good Overshoot (< 10%%):      %3d/%d (%.1f%%)\n', good_overshoot, total_samples, 100*good_overshoot/total_samples);
+fprintf('Good ISE (< 1):              %3d/%d (%.1f%%)\n', good_ise, total_samples, 100*good_ise/total_samples);
+fprintf('Good Settling Time (< 100s): %3d/%d (%.1f%%)\n', good_settling, total_samples, 100*good_settling/total_samples);
+fprintf('Good Rise Time (< 50s):      %3d/%d (%.1f%%)\n', good_rise, total_samples, 100*good_rise/total_samples);
+
+fprintf('\n=== END STATISTICAL ANALYSIS ===\n\n');
+
+% === 10. Plot Step Responses ===
 if ~isempty(all_y)
     figure;
     hold on;
