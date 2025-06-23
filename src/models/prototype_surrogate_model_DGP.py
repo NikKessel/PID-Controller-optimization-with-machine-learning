@@ -26,17 +26,20 @@ def inverse_log1p_transform(pred_log):
 
 
 # === Load dataset ===
-df = pd.read_csv(r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\src\data\pid_dataset_pidtune.csv")
+df = pd.read_csv(r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\src\data\pid_dataset_random_pid.csv")
 df = df.dropna(subset=["K", "T1", "T2", "Kp", "Ki", "Kd", "ISE", "Overshoot", "SettlingTime", "RiseTime"])
 
 # === Filter outliers ===
-df = df[df["ISE"] < 100]
-df = df[df["SettlingTime"] < 500]
-df = df[df["RiseTime"] < 300]
+df = df[df["ISE"] < 10000]
+df = df[df["ISE"] > 0.01]
+df = df[df["SettlingTime"] < 5000]
+df = df[df["RiseTime"] < 3000]
+df = df[df["SettlingTime"] > 0.1000]
+df = df[df["RiseTime"] > 0.1000]
 df = df[df["Overshoot"] > 0.03]
-df = df[df["Kp"] < 100]
-df = df[df["Ki"] < 100]
-df = df[df["Kd"] < 100]
+df = df[df["Kp"] < 1000 ]
+df = df[df["Ki"] < 1000]
+df = df[df["Kd"] < 1000]
 
 
 # === Log-transform targets ===

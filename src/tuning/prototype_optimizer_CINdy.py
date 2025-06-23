@@ -50,31 +50,63 @@ for target in ["ISE_log", "Overshoot", "SettlingTime_log", "RiseTime_log"]:
     models[target] = load_model(target)
 
 # === Surrogate prediction ===
-def predict_metrics(K, T1, T2, Kp, Ki, Kd) -> Dict[str, float]:
+def predict_metrics(K, T1, T2, Kp, Ki, Kd) -> Dict[str, Dict[str, float]]:
     X = np.array([[K, T1, T2, Kp, Ki, Kd]], dtype=np.float32)
-    preds = {}
+    result = {}
     for target, (model, likelihood, scaler) in models.items():
         X_scaled = scaler.transform(X)
         X_tensor = torch.tensor(X_scaled, dtype=torch.float32)
         with torch.no_grad():
             output = likelihood(model(X_tensor))
             mean = output.mean.item()
+            std = output.variance.sqrt().item()
+            #if "log" in target:
+                #mean = 10 ** mean - 1e-3
+                #std = (10 ** (mean + std)) - 1e-3 - mean  # Approximate std in linear space
             if "log" in target:
-                mean = 10 ** mean - 1e-3
-            preds[target.replace("_log", "")] = mean
-    return preds
+                pred_mean = np.expm1(mean)
+                lower = np.expm1(mean - std)
+                upper = np.expm1(mean + std)
+                std_approx = (upper - lower) / 2
+            else:
+                pred_mean = mean
+                std_approx = std
+
+            result[target.replace("_log", "")] = {
+                "mean": mean,
+                "std": std,
+            }
+    return result
+
+top5_controllers = []
 
 # === Cost function ===
 def surrogate_cost(params, plant, weights):
     Kp, Ki, Kd = params
     K, T1, T2 = plant
     metrics = predict_metrics(K, T1, T2, Kp, Ki, Kd)
-    return (
-        weights["ISE"] * metrics["ISE"] +
-        weights["Overshoot"] * metrics["Overshoot"] +
-        weights["SettlingTime"] * metrics["SettlingTime"] +
-        weights["RiseTime"] * metrics["RiseTime"]
-    )
+
+    # Compute weighted cost
+    weighted = {
+        name: weights[name] * metrics[name]["mean"]
+        for name in ["ISE", "Overshoot", "SettlingTime", "RiseTime"]
+    }
+    cost = sum(weighted.values())
+
+    # Print details
+    print(f"\n[Evaluation] Kp={Kp:.3f}, Ki={Ki:.3f}, Kd={Kd:.3f} → Cost={cost:.3f}")
+    for name in ["ISE", "Overshoot", "SettlingTime", "RiseTime"]:
+        print(f" - {name}: {metrics[name]['mean']:.3f} ± {metrics[name]['std']:.3f} × {weights[name]} = {weighted[name]:.3f}")
+
+    # Store for top 5 tracking
+    top5_controllers.append((cost, {
+        "Kp": Kp, "Ki": Ki, "Kd": Kd, 
+        "Metrics": metrics, "Weighted": weighted
+    }))
+
+    return cost
+
+
 
 # === Optimizer with fallback options ===
 def optimize_pid(plant, weights, budget=100, optimizer_name="DE"):
@@ -157,6 +189,16 @@ def optimize_pid_scipy(plant, weights, budget=100):
             
     except ImportError:
         raise RuntimeError("Scipy not available and nevergrad optimizers failed")
+    
+top5_sorted = sorted(top5_controllers, key=lambda x: x[0])[:5]
+print("\n🏆 Top 5 Controllers Evaluated:")
+for i, (c, data) in enumerate(top5_sorted, 1):
+    print(f"#{i} → Cost={c:.3f}, Kp={data['Kp']:.3f}, Ki={data['Ki']:.3f}, Kd={data['Kd']:.3f}")
+    for name in ["ISE", "Overshoot", "SettlingTime", "RiseTime"]:
+        m = data["Metrics"][name]
+        w = data["Weighted"][name]
+        print(f"   • {name}: {m['mean']:.3f} ± {m['std']:.3f}, weighted: {w:.3f}")
+
 
 # === Example usage ===
 if __name__ == "__main__":
@@ -177,5 +219,5 @@ if __name__ == "__main__":
 
     predicted = predict_metrics(plant[0], plant[1], plant[2], best_pid["Kp"], best_pid["Ki"], best_pid["Kd"])
     print("\n\U0001F4C8 Predicted Performance Metrics:")
-    for metric, value in predicted.items():
-        print(f"{metric}: {value:.4f}")
+for metric, result in predicted.items():
+    print(f"{metric}: {result['mean']:.4f} ± {result['std']:.4f}")
