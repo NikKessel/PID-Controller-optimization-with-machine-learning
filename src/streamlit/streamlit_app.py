@@ -12,7 +12,7 @@ from utils.simulink_runner import run_simulink_simulation
 # Set page config###
 #test
 # === Page Config ===
-st.set_page_config(page_title="PID Optimizer", layout="wide")
+st.set_page_config(page_title="PID Optimizer", layout="wide", initial_sidebar_state="expanded")
 
 # === Sidebar Navigation ===
 st.sidebar.title("Navigation")
