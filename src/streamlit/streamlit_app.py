@@ -26,7 +26,7 @@ mode = st.sidebar.radio("Choose Mode", [
 
 # === Landing Page ===
 if mode == "🏠 Home":
-    st.title("📘 Machine Learning for Performance-Driven Tuning of PDI Controllers in Process Control Applications")
+    st.title("📘 Machine Learning for Performance-Driven Tuning of PID Controllers in Process Control Applications")
 
     st.markdown("""
     ## 🎓 Project Overview
