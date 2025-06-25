@@ -444,7 +444,7 @@ elif mode == "🧪 Simulink Validation":
     git clone https://github.com/your-username/PID-Controller-optimization-with-machine-learning.git
 
     2. **Update file paths**  
-    Adjust paths in `run_simulink_pid.m` and related Python scripts (e.g. `simulate_controller.py`) to match your local environment.
+    Adjust paths in `run_simulink_pid.m` and related Python scripts (e.g. `simulate_controller.py`) to match your local paths.
 
     3. **Start the app locally**  
     Run `streamlit run app.py` and open the **🧪 Simulink Validation** section.
