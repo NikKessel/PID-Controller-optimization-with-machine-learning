@@ -11,32 +11,103 @@ from utils.simulink_runner import run_simulink_simulation
 
 # Set page config###
 #test
-st.set_page_config(
-    page_title="PID Optimizer with Machine Learning",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# === Page Config ===
+st.set_page_config(page_title="PID Optimizer", layout="wide")
 
-# Title and subtitle
-st.title("🎛️ PID Controller Optimization Tool") #
-st.markdown("_A modern ML-based GUI to Predict, Evaluate, and Optimize PID controllers for your process models._")
+# === Sidebar Navigation ===
+st.sidebar.title("Navigation")
+mode = st.sidebar.radio("Choose Mode", [
+    "🏠 Home",
+    "🔍 Predict PID",
+    "📊 Evaluate PID",
+    "⚙️ Optimize PID",
+    "🧪 Simulink Validation"
+])
 
-# --- Sidebar: Mode selection ---
-model_choice = None
-#mode = st.sidebar.radio("🧠 Select Mode", ["Predict PID", "Evaluate PID", "Optimize PID", "Simulink Validation"])
-mode = st.sidebar.selectbox(
-    "Choose Mode",
-    [
-        "Evaluate PID",
-        "Optimize PID",
-        "Predict PID",
-        "Simulink Validation"  # ✅ This must match your `elif` string
+# === Landing Page ===
+if mode == "🏠 Home":
+    st.title("🎓 Bachelor Thesis: Machine Learning for Performance-Driven Tuning of PDI Controllers in Process Control Applications")
+
+    st.markdown("""
+    ## 📘 Project Overview
+
+    This application is part of my Bachelor thesis in **Bioprocess Engineering** at **Frankfurt University of Applied Sciences**. 
+
+    ### 🎯 Thesis Title:
+    **"Machine Learning for Performance-Driven Tuning of PDI Controllers in Process Control Applications"**
+
+    ### 🤖 Goal:
+    The aim is to build a machine learning pipeline that can:
+    - Predict suitable PID controller parameters (Kp, Ki, Kd) for dynamic systems
+    - Evaluate the performance of user-given controller
+    - Optimize controller parameters using surrogate models and genetic algorithms
+    - Validate results via MATLAB/Simulink simulations
+
+    ### 🛠 Technologies Used:
+    - Python, Streamlit, scikit-learn, GPyTorch, XGBoost
+    - MATLAB/Simulink
+
+    ---
+
+    ## 🧠 How the App Works
+
+    You can use the navigation bar to explore 4 different modes:
+
+    1. **Predict PID**: Input a transfer function (K, T1, T2, Td), select ML model → get Kp, Ki, Kd
+    2. **Evaluate PID**: Evaluate any PID setting using trained surrogate model
+    3. **Optimize PID**: Use ML-driven optimization to find best controller (based on weights and constraints)
+    4. **Simulink Validation**: Run final controller in MATLAB for verification
+
+    ---
+
+    ## 📊 Model Performance (R² / MAE)
+
+    ### 🔎 Multi-output Surrogate Model (Deep Gaussian Process)
+    | Metric        | R²     | MAE       |
+    |---------------|---------|-----------|
+    | ISE           | 0.853   | 1.302     |
+    | Overshoot     | 0.481   | 1.422     |
+    | Settling Time | 0.833   | 15.503    |
+    | Rise Time     | 0.836   | 4.259     |
+
+    ### 🔍 PID Parameter Prediction
+    | Parameter | Model         | R²    | MAE    |
+    |-----------|---------------|--------|--------|
+    | Kp        | Deep GP       | 0.985  | 0.029  |
+    | Ki        | Deep GP       | 0.955  | 0.061  |
+    | Kd        | Deep GP       | 0.947  | 0.347  |
+
+    ---
+
+    ## 📷 Example Results and Visualizations
+    """)
+
+    image_folder = os.path.join(os.path.dirname(__file__), "images")
+    examples = [
+        ("Step Response Comparison", "step_response_example.png"),
+        ("Cost Function Breakdown", "cost_breakdown_bar.png"),
+        ("Radar Plot of Metrics", "radar_plot.png"),
+        ("Simulink Response", "simulink_output.png")
     ]
-)
+
+    for caption, file in examples:
+        image_path = os.path.join(image_folder, file)
+        if os.path.exists(image_path):
+            st.image(image_path, caption=caption, use_column_width=True)
+        else:
+            st.warning(f"Missing image: {file}")
+
+    st.markdown("""
+    ---
+    🔎 For any questions or source code, visit the [GitHub repository](https://github.com/your-repo) or contact me via my university email.
+    """)
+
+
 
 
 # --- Conditional ML model selection ---
-if mode == "Predict PID":
+if mode == "🔍 Predict PID":
+    
     model_choice = st.sidebar.selectbox("🤖 ML Model", ["Random Forest", "MLP", "XGBoost"], key="model_select")
     if "predict_clicked" not in st.session_state: ####
         st.session_state.predict_clicked = False
@@ -227,7 +298,7 @@ if mode == "Predict PID":
 
 
 
-elif mode == "Evaluate PID":
+elif mode ==  "📊 Evaluate PID":
     st.info("Evaluate performance of a given PID configuration")
 
     K = st.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=1.0)
@@ -296,7 +367,8 @@ elif mode == "Evaluate PID":
         except Exception as e:
             st.error(f"Evaluation failed: {e}")
 
-elif mode == "Optimize PID":
+elif mode == "⚙️ Optimize PID":
+    
     st.info("Use ML-guided optimization to find best PID")
     model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
     st.markdown("#### Define Optimization Weights")
@@ -364,7 +436,7 @@ elif mode == "Optimize PID":
             except Exception as e:
                 st.error(f"Optimization failed: {e}")
                 
-elif mode == "Simulink Validation":
+elif mode == "🧪 Simulink Validation":
     st.success("✅ Entered Simulink Validation mode")  # Debug marker
     st.header("🧪 Simulink-in-the-Loop Validation")
     st.markdown("Run your controller on a real Simulink model and compare the result.")

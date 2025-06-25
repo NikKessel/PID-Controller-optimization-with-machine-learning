@@ -26,20 +26,21 @@ def inverse_log1p_transform(pred_log):
 
 
 # === Load dataset ===
-df = pd.read_csv(r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\src\data\pid_dataset_random_pid.csv")
+df = pd.read_csv(r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\src\data\pid_dataset_pidtune.csv")
 df = df.dropna(subset=["K", "T1", "T2", "Kp", "Ki", "Kd", "ISE", "Overshoot", "SettlingTime", "RiseTime"])
 
 # === Filter outliers ===
-df = df[df["ISE"] < 10000]
-df = df[df["ISE"] > 0.01]
-df = df[df["SettlingTime"] < 5000]
-df = df[df["RiseTime"] < 3000]
+df = df[df["ISE"] < 100]
+df = df[df["ISE"] > 0.001]
+df = df[df["SettlingTime"] < 500]
+df = df[df["RiseTime"] < 300]
 df = df[df["SettlingTime"] > 0.1000]
 df = df[df["RiseTime"] > 0.1000]
-df = df[df["Overshoot"] > 0.03]
-df = df[df["Kp"] < 1000 ]
-df = df[df["Ki"] < 1000]
-df = df[df["Kd"] < 1000]
+df = df[df["Overshoot"] > 0.001]
+df = df[df["Kp"] < 200 ]
+df = df[df["Kp"] > 0.3 ]
+df = df[df["Ki"] < 200]
+df = df[df["Kd"] < 200]
 
 
 # === Log-transform targets ===
@@ -99,10 +100,11 @@ for target in targets:
     X_test = X_scaled[df_target.index.isin(test_idx)]
     y_test = y[df_target.index.isin(test_idx)]
 
-    X_train_tensor = torch.tensor(X_train)
-    y_train_tensor = torch.tensor(y_train)
-    X_test_tensor = torch.tensor(X_test)
-    y_test_tensor = torch.tensor(y_test)
+    X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
+    y_train_tensor = torch.tensor(y_train, dtype=torch.float32)
+    X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
+    y_test_tensor = torch.tensor(y_test, dtype=torch.float32)
+
 
     model = VariationalGP(X.shape[1])
     likelihood = gpytorch.likelihoods.GaussianLikelihood()
