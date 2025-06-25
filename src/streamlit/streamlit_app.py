@@ -26,28 +26,19 @@ mode = st.sidebar.radio("Choose Mode", [
 
 # === Landing Page ===
 if mode == "🏠 Home":
-    st.title("🎓 Bachelor Thesis: Machine Learning for Performance-Driven Tuning of PDI Controllers in Process Control Applications")
+    st.title("📘 Machine Learning for Performance-Driven Tuning of PDI Controllers in Process Control Applications")
 
     st.markdown("""
-    ## 📘 Project Overview
+    ## 🎓 Project Overview
 
     This application is part of my Bachelor thesis in **Bioprocess Engineering** at **Frankfurt University of Applied Sciences**. 
-
-    ### 🎯 Thesis Title:
-    **"Machine Learning for Performance-Driven Tuning of PDI Controllers in Process Control Applications"**
 
     ### 🤖 Goal:
     The aim is to build a machine learning pipeline that can:
     - Predict suitable PID controller parameters (Kp, Ki, Kd) for dynamic systems
-    - Evaluate the performance of user-given controller
+    - Evaluate the performance metrics of user-given controller
     - Optimize controller parameters using surrogate models and genetic algorithms
     - Validate results via MATLAB/Simulink simulations
-
-    ### 🛠 Technologies Used:
-    - Python, Streamlit, scikit-learn, GPyTorch, XGBoost
-    - MATLAB/Simulink
-
-    ---
 
     ## 🧠 How the App Works
 
@@ -66,40 +57,41 @@ if mode == "🏠 Home":
     | Metric        | R²     | MAE       |
     |---------------|---------|-----------|
     | ISE           | 0.853   | 1.302     |
-    | Overshoot     | 0.481   | 1.422     |
+    | Overshoot     | 0.581   | 1.422     |
     | Settling Time | 0.833   | 15.503    |
     | Rise Time     | 0.836   | 4.259     |
 
     ### 🔍 PID Parameter Prediction
-    | Parameter | Model         | R²    | MAE    |
-    |-----------|---------------|--------|--------|
-    | Kp        | Deep GP       | 0.985  | 0.029  |
-    | Ki        | Deep GP       | 0.955  | 0.061  |
-    | Kd        | Deep GP       | 0.947  | 0.347  |
+    | Parameter | Model        | R²      | MAE     |
+    | --------- | ------------ | ------- | ------- |
+    | Kp        | Symbolic Reg | 0.975   | 0.0035  |
+    | Ki        | Symbolic Reg | 0.913   | 0.010   |
+    | Kd        | Symbolic Reg  | 0.946   | 0.020 |
+    | --------- | ------- | ----- | ----- |
+    | Kp        | Deep GP | 0.985 | 0.029 |
+    | Ki        | Deep GP | 0.955 | 0.061 |
+    | Kd        | Deep GP | 0.947 | 0.347 |
+    | --------- | ------------- | ----- | ----- |
+    | Kp        | Random Forest | 0.984 | 0.032 |
+    | Ki        | Random Forest | 0.942 | 0.066 |
+    | Kd        | Random Forest | 0.944 | 0.362 |
+    | --------- | ----- | ----- | ----- |
+    | Kp        | MLP   | 0.973 | 0.043 |
+    | Ki        | MLP   | 0.937 | 0.079 |
+    | Kd        | MLP   | 0.926 | 0.395 |
+    | --------- | ------- | ----- | ----- |
+    | Kp        | XGBoost | 0.978 | 0.039 |
+    | Ki        | XGBoost | 0.940 | 0.073 |
+    | Kd        | XGBoost | 0.932 | 0.376 |
+
 
     ---
 
-    ## 📷 Example Results and Visualizations
     """)
-
-    image_folder = os.path.join(os.path.dirname(__file__), "images")
-    examples = [
-        ("Step Response Comparison", "step_response_example.png"),
-        ("Cost Function Breakdown", "cost_breakdown_bar.png"),
-        ("Radar Plot of Metrics", "radar_plot.png"),
-        ("Simulink Response", "simulink_output.png")
-    ]
-
-    for caption, file in examples:
-        image_path = os.path.join(image_folder, file)
-        if os.path.exists(image_path):
-            st.image(image_path, caption=caption, use_column_width=True)
-        else:
-            st.warning(f"Missing image: {file}")
 
     st.markdown("""
     ---
-    🔎 For any questions or source code, visit the [GitHub repository](https://github.com/your-repo) or contact me via my university email.
+    🔎 For any questions or source code, visit the [GitHub repository](https://github.com/NikKessel/PID-Controller-optimization-with-machine-learning/tree/main) or contact me via my university email: nkessel[a]stud.fra-uas.de.
     """)
 
 
@@ -440,6 +432,25 @@ elif mode == "🧪 Simulink Validation":
     st.success("✅ Entered Simulink Validation mode")  # Debug marker
     st.header("🧪 Simulink-in-the-Loop Validation")
     st.markdown("Run your controller on a real Simulink model and compare the result.")
+    st.markdown("""To validate the performance of the machine learning–optimized PID controllers under realistic conditions, a **Simulink-in-the-loop** simulation setup was implemented.
+
+    The optimized controller parameters are exported from Python to MATLAB via a `.mat` file. MATLAB then runs a predefined Simulink model using these values and returns the step response of the system.
+
+    ⚠️ **Note**: Due to MATLAB’s academic licensing, this feature **only works locally**. It cannot be run in cloud environments like Streamlit Cloud.
+
+    To run the Simulink evaluation on your own machine:
+
+    1. **Clone the repository**  
+    git clone https://github.com/your-username/PID-Controller-optimization-with-machine-learning.git
+
+    2. **Update file paths**  
+    Adjust paths in `run_simulink_pid.m` and related Python scripts (e.g. `simulate_controller.py`) to match your local environment.
+
+    3. **Start the app locally**  
+    Run `streamlit run app.py` and open the **🧪 Simulink Validation** section.
+
+    This allows you to **compare the ML-optimized controller response directly with MATLAB Simulink simulation**, ensuring practical and reliable validation.
+    """)
 
     # === Input fields ===
     st.subheader("System Parameters")
