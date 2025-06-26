@@ -1,7 +1,7 @@
 ## === CINdy-based PID Optimizer Using Surrogate Model ===
 # Input: G(s) = [K, T1, T2] and trained surrogate model
 # Output: Optimized [Kp, Ki, Kd] minimizing surrogate-predicted cost
-
+import os
 import nevergrad as ng
 import torch
 import joblib
@@ -9,6 +9,17 @@ import pandas as pd
 import numpy as np
 from typing import Dict
 import gpytorch
+import matplotlib
+import matplotlib.pyplot as plt
+import seaborn as sns
+from mpl_toolkits.mplot3d import Axes3D
+import pandas as pd
+from pandas.plotting import scatter_matrix
+from scipy.spatial.distance import pdist, squareform
+
+
+evaluated_controllers = []
+
 
 # === Define model architecture (same as training) ===
 class VariationalGP(gpytorch.models.ApproximateGP):
@@ -28,7 +39,7 @@ class VariationalGP(gpytorch.models.ApproximateGP):
         return gpytorch.distributions.MultivariateNormal(mean, covar)
 
 # === Load trained surrogates ===
-MODEL_DIR = r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\models\DGPSurrogate\surrogate_perf_20250625_125135"
+MODEL_DIR = r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\models\DGPSurrogate\surrogate_perf_20250620_140556"
 
 def load_model(param: str):
     input_dim = 6
@@ -78,14 +89,27 @@ def surrogate_cost(params, plant, weights):
     Kp, Ki, Kd = params
     K, T1, T2 = plant
     metrics = predict_metrics(K, T1, T2, Kp, Ki, Kd)
+
+    settling = metrics.get("SettlingTime", np.nan)
+    rise = metrics.get("RiseTime", np.nan)
+
+    if settling < rise:
+        print(f"[❌ Reject] Implausible timing: SettlingTime={settling:.3f} < RiseTime={rise:.3f}")
+        return 1e6
+
+
     cost = (
         weights["ISE"] * metrics["ISE"] +
         weights["Overshoot"] * metrics["Overshoot"] +
         weights["SettlingTime"] * metrics["SettlingTime"] +
         weights["RiseTime"] * metrics["RiseTime"]
     )
+    if cost <= 1:
+        print(f"[❌ Skipping] Cost={cost:.3f} too low, ignoring for training signal")
+        return 1e6  # Reject solutions that are already good
     print(f"\n[🧮 surrogate_cost] Kp={Kp:.4f}, Ki={Ki:.4f}, Kd={Kd:.4f} → Cost={cost:.6f}")
     return cost
+
 
 
 # === Optimizer with fallback options ===
@@ -94,8 +118,8 @@ def optimize_pid(plant, weights, budget=1000, optimizer_name="DE"):
     
     parametrization = ng.p.Instrumentation(
         Kp=ng.p.Scalar(init=1.0).set_bounds(0.30, 10.0),
-        Ki=ng.p.Scalar(init=0.1).set_bounds(0.001, 3.0),
-        Kd=ng.p.Scalar(init=0.01).set_bounds(0.0, 3.0),
+        Ki=ng.p.Scalar(init=0.1).set_bounds(0.1, 5.0),
+        Kd=ng.p.Scalar(init=0.01).set_bounds(0.0, 5.0),
     )
 
     optimizers_to_try = [
@@ -122,10 +146,20 @@ def optimize_pid(plant, weights, budget=1000, optimizer_name="DE"):
             def cost_fn(Kp, Ki, Kd):
                 nonlocal print_counter
                 cost = surrogate_cost([Kp, Ki, Kd], plant, weights)
+                
+                # Log controller evaluation
+                evaluated_controllers.append({
+                    "Kp": Kp,
+                    "Ki": Ki,
+                    "Kd": Kd,
+                    "cost": cost
+                })
+                
                 if print_counter < 5:
                     print(f"[🧪 Eval {print_counter + 1}] Kp={Kp:.4f}, Ki={Ki:.4f}, Kd={Kd:.4f} → Cost={cost:.6f}")
                     print_counter += 1
                 return cost
+
 
             test_candidate = optimizer.ask()
             optimizer.tell(test_candidate, cost_fn(**test_candidate.kwargs))
@@ -176,10 +210,24 @@ def optimize_pid_scipy(plant, weights, budget=100):
     except ImportError:
         raise RuntimeError("Scipy not available and nevergrad optimizers failed")
 
+def diverse_top_controllers(df, top_n=5, min_dist=0.5):
+    df_sorted = df.sort_values("cost").copy()
+    selected = []
+
+    for _, row in df_sorted.iterrows():
+        gains = np.array([row["Kp"], row["Ki"], row["Kd"]])
+        if all(np.linalg.norm(gains - np.array([s["Kp"], s["Ki"], s["Kd"]])) > min_dist for s in selected):
+            selected.append(row)
+        if len(selected) == top_n:
+            break
+
+    return pd.DataFrame(selected)
+
+
 # === Example usage ===
 if __name__ == "__main__":
-    plant = (3, 10.0, 0)  # K, T1, T2
-    weights = {"ISE": 5.0, "Overshoot": 1.5, "SettlingTime": 0.2, "RiseTime": 0.1}
+    plant = (2.87, 7.0, 18.0)  # K, T1, T2
+    weights = {"ISE": 1.10, "Overshoot": 0.5, "SettlingTime": 1.2, "RiseTime": 1.1}
     print(weights)  # Should show non-zero weights
     print(models.keys())  # Should match: ISE_log, Overshoot, ...
     print(models["ISE_log"][0])  # Print the model to confirm uniqueness
@@ -199,8 +247,116 @@ if __name__ == "__main__":
     predicted = predict_metrics(plant[0], plant[1], plant[2], best_pid["Kp"], best_pid["Ki"], best_pid["Kd"])
     print("\n📈 Predicted Performance Metrics:")
     for metric, value in predicted.items():
-        if metric in ["SettlingTime", "RiseTime"]:
+        if metric in ["ISE", "Overshoot", "SettlingTime", "RiseTime"]:
             original_value = np.expm1(value)
             print(f"{metric}: {value:.4f} → {original_value:.3f} s")
         else:
             print(f"{metric}: {value:.4f}")
+            # Convert to DataFrame
+    df_eval = pd.DataFrame(evaluated_controllers)
+
+    # === Output directory ===
+    plot_dir = r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\results\plot"
+    os.makedirs(plot_dir, exist_ok=True)
+
+    # === Convert to DataFrame ===
+    df_eval = pd.DataFrame(evaluated_controllers)
+
+    # === 1. Histogram of Costs ===
+    if not df_eval.empty and "cost" in df_eval.columns:
+        fig = plt.figure()
+        plt.hist(df_eval["cost"], bins=30, color='skyblue', edgecolor='black')
+        plt.xlabel("Cost")
+        plt.ylabel("Frequency")
+        plt.title("Distribution of Evaluated Costs")
+        plt.grid(True)
+        plt.tight_layout()
+        fig.savefig(os.path.join(plot_dir, "cost_hist.png"))
+        plt.close(fig)
+    else:
+        print("⚠️ No valid data for histogram.")
+    matplotlib.use("Agg")  # Prevent GUI locking if running headless or in VSCode
+
+    # === 2. Pairplot (Seaborn) ===
+    try:
+        # Clean and filter
+        df_clean = df_eval[["Kp", "Ki", "Kd", "cost"]].dropna()
+        df_clean = df_clean[df_clean["cost"] < 1e5]  # remove cost outliers, adjust threshold as needed
+
+        if len(df_clean) > 500:
+            df_clean = df_clean.sample(n=500, random_state=42)
+
+        print(f"🌀 Generating seaborn pairplot on {len(df_clean)} filtered samples...")
+
+        # Plot
+        sns_plot = sns.pairplot(df_clean, diag_kind="kde", corner=True, plot_kws={'alpha': 0.6})
+        sns_plot.fig.suptitle("Gain vs Cost Pairplot (Filtered)", y=1.02)
+
+        sns_plot.savefig(os.path.join(plot_dir, "pair_scatter_matrix_filtered.png"))
+        plt.close()
+
+        print("✅ Filtered pairplot saved.")
+    except Exception as e:
+        print(f"❌ Seaborn pairplot failed: {e}")
+
+    # === 3. 3D Scatter: Kp, Ki vs Cost ===
+    try:
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection="3d")
+        ax.scatter(df_eval["Kp"], df_eval["Ki"], df_eval["cost"], c='blue', alpha=0.6)
+        ax.set_xlabel("Kp")
+        ax.set_ylabel("Ki")
+        ax.set_zlabel("Cost")
+        plt.title("3D Scatter: Kp, Ki, Cost")
+        plt.tight_layout()
+        fig.savefig(os.path.join(plot_dir, "3dscatter.png"))
+        plt.close(fig)
+    except Exception as e:
+        print(f"❌ 3D scatter plot failed: {e}")
+
+    # === 4. Radar Plot: Predicted Performance ===
+    try:
+        labels = list(predicted.keys())
+        values = list(predicted.values())
+        angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
+        values += values[:1]
+        angles += angles[:1]
+
+        fig, ax = plt.subplots(subplot_kw={'polar': True})
+        ax.plot(angles, values, 'o-', linewidth=2)
+        ax.fill(angles, values, alpha=0.25)
+        ax.set_thetagrids(np.degrees(angles[:-1]), labels)
+        plt.title("Predicted Performance Radar Plot")
+        plt.tight_layout()
+        fig.savefig(os.path.join(plot_dir, "Radar.png"))
+        plt.close(fig)
+    except Exception as e:
+        print(f"❌ Radar plot failed: {e}")
+
+    # === 5. Top 5 Controllers Table ===
+    # Clean up and get top diverse set
+    df_unique = (
+        df_eval
+        .round({"Kp": 2, "Ki": 2, "Kd": 2})
+        .drop_duplicates(subset=["Kp", "Ki", "Kd"])
+        .dropna(subset=["Kp", "Ki", "Kd", "cost"])
+    )
+
+    top5_unique = diverse_top_controllers(df_unique, top_n=5, min_dist=3.5)
+
+    print("\n🏆 Top 5 Diverse Controllers:")
+    print(top5_unique[["Kp", "Ki", "Kd", "cost"]].round(4))
+
+    print("\n📊 Full Metrics for Top 5 Controllers:")
+    for i, row in top5_unique.iterrows():
+        Kp, Ki, Kd = row["Kp"], row["Ki"], row["Kd"]
+        metrics = predict_metrics(plant[0], plant[1], plant[2], Kp, Ki, Kd)
+
+        print(f"\n🔧 Controller #{i + 1}: Kp={Kp:.4f}, Ki={Ki:.4f}, Kd={Kd:.4f}, Cost={row['cost']:.4f}")
+        for metric, val in metrics.items():
+            if metric in ["SettlingTime", "RiseTime"]:
+                val_inv = np.expm1(val)
+                print(f"   {metric}: {val:.4f} → {val_inv:.3f} s")
+            else:
+                print(f"   {metric}: {val:.4f}")
+
