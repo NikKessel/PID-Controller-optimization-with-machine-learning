@@ -28,7 +28,7 @@ class VariationalGP(gpytorch.models.ApproximateGP):
         return gpytorch.distributions.MultivariateNormal(mean, covar)
 
 # === Load trained surrogates ===
-MODEL_DIR = r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\models\DGPSurrogate\surrogate_perf_20250620_143352"
+MODEL_DIR = r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\models\DGPSurrogate\surrogate_perf_20250625_125135"
 
 def load_model(param: str):
     input_dim = 6
@@ -89,13 +89,13 @@ def surrogate_cost(params, plant, weights):
 
 
 # === Optimizer with fallback options ===
-def optimize_pid(plant, weights, budget=10000, optimizer_name="DE"):
+def optimize_pid(plant, weights, budget=1000, optimizer_name="DE"):
     print(f"\U0001F680 Starting optimization with {optimizer_name}...")
     
     parametrization = ng.p.Instrumentation(
-        Kp=ng.p.Scalar(init=1.0).set_bounds(0.4, 10.0),
-        Ki=ng.p.Scalar(init=0.1).set_bounds(0.001, 5.0),
-        Kd=ng.p.Scalar(init=0.01).set_bounds(0.0, 5.0),
+        Kp=ng.p.Scalar(init=1.0).set_bounds(0.30, 10.0),
+        Ki=ng.p.Scalar(init=0.1).set_bounds(0.001, 3.0),
+        Kd=ng.p.Scalar(init=0.01).set_bounds(0.0, 3.0),
     )
 
     optimizers_to_try = [
@@ -178,8 +178,8 @@ def optimize_pid_scipy(plant, weights, budget=100):
 
 # === Example usage ===
 if __name__ == "__main__":
-    plant = (1, 1.0, 0.50)  # K, T1, T2
-    weights = {"ISE": 1.0, "Overshoot": 0.5, "SettlingTime": 0.2, "RiseTime": 0.1}
+    plant = (3, 10.0, 0)  # K, T1, T2
+    weights = {"ISE": 5.0, "Overshoot": 1.5, "SettlingTime": 0.2, "RiseTime": 0.1}
     print(weights)  # Should show non-zero weights
     print(models.keys())  # Should match: ISE_log, Overshoot, ...
     print(models["ISE_log"][0])  # Print the model to confirm uniqueness
@@ -197,6 +197,10 @@ if __name__ == "__main__":
     print("\U0001F50D Predicted Cost:", best_cost)
 
     predicted = predict_metrics(plant[0], plant[1], plant[2], best_pid["Kp"], best_pid["Ki"], best_pid["Kd"])
-    print("\n\U0001F4C8 Predicted Performance Metrics:")
+    print("\n📈 Predicted Performance Metrics:")
     for metric, value in predicted.items():
-        print(f"{metric}: {value:.4f}")
+        if metric in ["SettlingTime", "RiseTime"]:
+            original_value = np.expm1(value)
+            print(f"{metric}: {value:.4f} → {original_value:.3f} s")
+        else:
+            print(f"{metric}: {value:.4f}")
