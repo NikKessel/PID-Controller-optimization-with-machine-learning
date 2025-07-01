@@ -4,6 +4,7 @@ import numpy as np
 import joblib
 import os
 import pandas as pd
+from control import tf, feedback, step_response, pade
 from control.matlab import tf, feedback, step
 from utils.predict_pid import predict_pid_params
 from utils.simulink_runner import run_simulink_simulation
@@ -116,7 +117,6 @@ if mode == "🔍 Predict PID":
 
 
 
-
     if st.button("🔍 Predict PID"):
         st.session_state.predict_clicked = True
         try:
@@ -124,7 +124,6 @@ if mode == "🔍 Predict PID":
             model_filename = f"model_{model_choice.lower().replace(' ', '_')}.joblib"
             model_path = os.path.join(model_dir, model_filename)
             model = joblib.load(model_path)
-
             # Prepare input vector
             if model_choice == "Random Forest":
                 X = np.array([[K, T1, T2, Td]])
@@ -147,89 +146,97 @@ if mode == "🔍 Predict PID":
 
             # --- Real simulation ---
 
-            def simulate_response(K, T1, T2, Td, Kp, Ki, Kd, T_final=100):
+            # --- Simulate system response ---
+            def simulate_response(K, T1, T2, L, Kp, Ki, Kd, T_final=100):
                 t = np.linspace(0, T_final, 1000)
-                num = [K]
                 den = np.polymul([T1, 1], [T2, 1]) if T2 > 0 else [T1, 1]
-                G = tf(num, den)
-                num = [1]                  # Unit-gain plant
-                G = tf(num, den)
-                G = K * G                  # Apply user gain as scalar multiplier
-
-                if Td > 0:
-                    G = G * tf([1], [1, Td])
+                G = tf([K], den)
+                if L > 0:
+                    num_d, den_d = pade(L, 1)
+                    G = G * tf(num_d, den_d)
                 s = tf([1, 0], [1])
                 C = Kp + Ki/s + Kd*s
                 sys = feedback(C * G, 1)
-                #t = np.linspace(0, T_final, 1000)
-                t = np.linspace(0, t_max, 1000)
-                T_final = t_max
-                #y = y * K 
-                t, y = step(sys, T=t)
-                 # Scale the output to match input step of magnitude K
-                return t, y, G, C
+                t, y = step_response(sys, T=t)
+                return t, y
 
-            t, y, G, C = simulate_response(K, T1, T2, Td, Kp, Ki, Kd)
-
-            # Updated implementation of ZN and CHR based on approximated Tu and Tg from T1 and T2
-
-            def estimate_tu_tg(T1, T2):
-                Tu = 0.5 * T1
-                Tg = T1 + T2
-                return Tu, Tg
-
-            def ziegler_nichols_pid(Tu, Tg):
-                Kp = 1.2 * Tg / Tu
-                Ti = 2 * Tu
-                Td = 0.5 * Tu
+            def zn_pid(K, T1, T2, L):
+                T = T1 + T2 if T2 > 0 else T1
+                Kp = 1.2 * T / (K * L)
+                Ti = 2 * L
+                Td = 0.5 * L
                 Ki = Kp / Ti
                 Kd = Kp * Td
                 return Kp, Ki, Kd
 
-            def chr_pid(Tu, Tg, overshoot=0):
+            def chr_pid(K, T1, T2, L, overshoot=0):
+                T = T1 + T2 if T2 > 0 else T1
                 if overshoot == 0:
-                    # CHR for 0% overshoot
-                    Kp = 0.6 * Tg / Tu
-                    Ti = Tu
-                    Td = 0.5 * Tu
+                    Kp = 0.6 * T / (K * L)
+                    Ti = L
+                    Td = 0.5 * L
                 else:
-                    # CHR for ~20% overshoot
-                    Kp = 0.95 * Tg / Tu
-                    Ti = 1.35 * Tu
-                    Td = 0.47 * Tu
+                    Kp = 0.95 * T / (K * L)
+                    Ti = 1.35 * L
+                    Td = 0.47 * L
                 Ki = Kp / Ti
                 Kd = Kp * Td
                 return Kp, Ki, Kd
 
-            Tu, Tg = estimate_tu_tg(T1, T2)
-            Kp_zn, Ki_zn, Kd_zn = ziegler_nichols_pid(Tu, Tg)
-            Kp_chr, Ki_chr, Kd_chr = chr_pid(Tu, Tg, overshoot=0)
+            # === Use Predicted PID ===
+            L = Td  # clarity
+            Kp_ml, Ki_ml, Kd_ml = Kp, Ki, Kd
+            Kp_zn, Ki_zn, Kd_zn = zn_pid(K, T1, T2, L)
+            Kp_chr, Ki_chr, Kd_chr = chr_pid(K, T1, T2, L, overshoot=0)
 
-            # Simulate
-            Kp_ml = Kp
-            Ki_ml = Ki
-            Kd_ml = Kd
-            t_ml, y, _, _ = simulate_response(K, T1, T2, Td, Kp_ml, Ki_ml, Kd_ml)
-            t_zn, y_zn, _, _ = simulate_response(K, T1, T2, Td, Kp_zn, Ki_zn, Kd_zn)
-            t_chr, y_chr, _, _ = simulate_response(K, T1, T2, Td, Kp_chr, Ki_chr, Kd_chr)
-            t = t_ml*K
-            t_zn = t_zn*K
-            t_chr = t_chr*K
+            # === Simulate Step Responses ===
+            t_ml, y_ml = simulate_response(K, T1, T2, L, Kp_ml, Ki_ml, Kd_ml, T_final=t_max)
+            t_zn, y_zn = simulate_response(K, T1, T2, L, Kp_zn, Ki_zn, Kd_zn, T_final=t_max)
+            t_chr, y_chr = simulate_response(K, T1, T2, L, Kp_chr, Ki_chr, Kd_chr, T_final=t_max)
+
+            
+            # === Debug Print for PID parameters ===
+            st.markdown("### 🔧 PID Parameter Debug")
+
+            st.code(f"""
+            🔍 Input Parameters:
+                K  = {K:.3f}
+                T1 = {T1:.3f}
+                T2 = {T2:.3f}
+                L  = {L:.3f}
+
+            📊 ML Predicted:
+                Kp = {Kp_ml:.4f}
+                Ki = {Ki_ml:.4f}
+                Kd = {Kd_ml:.4f}
+
+            📊 Ziegler-Nichols:
+                Kp = {Kp_zn:.4f}
+                Ki = {Ki_zn:.4f}
+                Kd = {Kd_zn:.4f}
+
+            📊 CHR (0% OS):
+                Kp = {Kp_chr:.4f}
+                Ki = {Ki_chr:.4f}
+                Kd = {Kd_chr:.4f}
+            """, language="text")
+
+
+            # === Plot Step Responses ===
             st.markdown("### Step Response")
-            fig, ax = plt.subplots(figsize=(5, 3))
-            ax.plot(y,t,  label="ML Predicted PID")
-            ax.plot(y_zn,t_zn,  '--', label="Ziegler–Nichols (approx)")
-            ax.plot(y_chr,t_chr,  ":", label="CHR (0%)")
-            step_input = np.ones_like(t) * K
-            step_input[t < 0.01] = 0  # makes it visibly a 'step'
-            ax.plot(t, step_input, "k--", label=f"Step Input (0 → {K:.2f})")
+            fig, ax = plt.subplots(figsize=(7, 4))
+            ax.plot(t_ml, y_ml, label="ML Predicted PID", linewidth=2)
+            ax.plot(t_zn, y_zn, '--', label="Ziegler–Nichols")
+            ax.plot(t_chr, y_chr, ":", label="CHR (0% OS)")
+            ax.plot(t_ml, np.ones_like(t_ml)*K, "k--", label=f"Step Input ({K:.2f})")
             ax.set_xlabel("Time [s]")
             ax.set_ylabel("Output")
             ax.set_title("Closed-Loop Step Response")
-            ax.set_ylim(0, 1.5 * K)
+            ax.set_ylim(0, y_max)
             ax.grid(True)
             ax.legend()
             st.pyplot(fig)
+
 
             def compute_and_plot_control_effort(K, T1, T2, Td, Kp, Ki, Kd, T_final=100, N=1000):
                 # Time vector
