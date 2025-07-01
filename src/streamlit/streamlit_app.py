@@ -108,13 +108,13 @@ if mode == "🔍 Predict PID":
         st.session_state.predict_clicked = False
 
     st.sidebar.markdown("**System Parameters**")
-    K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=1.0)
-    T1 = st.sidebar.number_input("T1", min_value=0.1, max_value=50.0, value=20.0)
-    T2 = st.sidebar.number_input("T2", min_value=0.0, max_value=50.0, value=10.0)
-    Td = st.sidebar.number_input("Td", min_value=0.0, max_value=5.0, value=1.0) 
+    K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=1.50)
+    T1 = st.sidebar.number_input("T1", min_value=0.1, max_value=50.0, value=2.0)
+    T2 = st.sidebar.number_input("T2", min_value=0.0, max_value=50.0, value=0.00)
+    Td = st.sidebar.number_input("Td", min_value=0.0, max_value=5.0, value=0.50) 
 
     st.sidebar.markdown("**Plot Settings**")
-    t_max = st.sidebar.slider("Simulation Time [s]", 20, 300, 100, key="slider_t_max")
+    t_max = st.sidebar.slider("Simulation Time [s]", 1, 300, 20, key="slider_t_max")
     y_max = st.sidebar.slider("Y-Axis Max (Output)", 1.0, 5.0, 1.5, step=0.1, key="slider_y_max")
 
 
@@ -395,7 +395,11 @@ elif mode == "📊 Evaluate PID":
                     G = control.pade(Td, 1)[0] * G
                 except:
                     st.warning("Pade approximation failed; skipping dead time.")
-            C = control.tf([Kd, Kp, Ki], [1, 0])
+            #C = control.tf([Kd, Kp, Ki], [1, 0])
+            P = control.tf([Kp], [1])
+            I = control.tf([Ki], [1, 0])
+            D = control.tf([Kd, 0], [1])
+            C = P + I + D
 
             sys_cl = control.feedback(C * G, 1)
 
@@ -471,16 +475,19 @@ elif mode == "📊 Evaluate PID":
 
 
 elif mode == "⚙️ Optimize PID":
-    
     st.info("Use ML-guided optimization to find best PID")
+
     model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
+    model_path = os.path.join(model_dir, "model_surrogate.joblib")
+    surrogate_model = joblib.load(model_path)
+
     st.markdown("#### Define Optimization Weights")
     w_ise = st.slider("ISE Weight", 0.0, 1.0, 0.5)
     w_os = st.slider("Overshoot Weight", 0.0, 1.0, 0.2)
     w_st = st.slider("Settling Time Weight", 0.0, 1.0, 0.2)
     w_rt = st.slider("Rise Time Weight", 0.0, 1.0, 0.1)
-    st.markdown("#### Define Performance Constraints")
 
+    st.markdown("#### Define Performance Constraints")
     c1, c2 = st.columns(2)
     with c1:
         max_ise = st.number_input("Max ISE", min_value=0.0, max_value=100.0, value=25.0)
@@ -492,52 +499,96 @@ elif mode == "⚙️ Optimize PID":
 
     st.sidebar.markdown("**Plant Parameter**")
     K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=4.5)
-    T1 = st.sidebar.number_input("T1 (Time Constant in s)", min_value=1.0, max_value=50.0, value=10.0)
-    T2 = st.sidebar.number_input("T2 (2nd Time Constant)", min_value=0.0, max_value=50.0, value=3.0) #
-    Td = st.sidebar.number_input("Td (Dead Time)", min_value=0.0, max_value=5.0, value=0.6) 
-
-
-    model_path = os.path.join(model_dir, "model_surrogate.joblib")
-    surrogate_model = joblib.load(model_path)
+    T1 = st.sidebar.number_input("T1", min_value=1.0, max_value=50.0, value=10.0)
+    T2 = st.sidebar.number_input("T2", min_value=0.0, max_value=50.0, value=3.0)
+    Td = st.sidebar.number_input("Td (Dead Time)", min_value=0.0, max_value=5.0, value=0.6)
 
     if st.button("⚙️ Run Optimization", key="optimize_button"):
-            #weights = (w_ise, w_os, w_st, w_rt)
-            weights = {
-                        "ISE":  w_ise,
-                        "Overshoot": w_os,
-                        "SettlingTime": w_st,
-                        "RiseTime": w_rt
-                    }
-            constraints = {
+
+        weights = {
+            "ISE": w_ise,
+            "Overshoot": w_os,
+            "SettlingTime": w_st,
+            "RiseTime": w_rt
+        }
+
+        constraints = {
             "ISE": max_ise,
-            "Overshoot": max_os ,  # convert from % to 0–1 range
+            "Overshoot": max_os,
             "SettlingTime": max_st,
             "RiseTime": max_rt,
-            "SSE": max_sse,
-}
+            "SSE": max_sse
+        }
 
-            from utils.optimize_pid import optimize_pid_for_system
-            try:
-                Kp, Ki, Kd, ise, os, stime, rtime, sse = optimize_pid_for_system(
-                    K, T1, T2, Td, surrogate_model, weights, constraints
-                )
-                st.success("Optimization complete!")
+        st.markdown("### 🔍 Debug Info")
+        st.write("**Plant:**", {"K": K, "T1": T1, "T2": T2, "Td": Td})
+        st.write("**Weights:**", weights)
+        st.write("**Constraints:**", constraints)
 
-                st.markdown("#### Optimal PID Parameters")
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Kp", f"{Kp:.3f}")
-                col2.metric("Ki", f"{Ki:.5f}")
-                col3.metric("Kd", f"{Kd:.2f}")
+        from utils.optimize_pid import optimize_pid_for_system
 
-                st.markdown("#### Predicted Performance Metrics")
-                col1, col2, col3, col4 = st.columns(4)
-                col1.metric("ISE", f"{ise:.2f}")
-                col2.metric("Overshoot", f"{os :.1f}%")
-                col3.metric("Settling Time", f"{stime:.1f} s")
-                col4.metric("Rise Time", f"{rtime:.1f} s")
+        try:
+            Kp, Ki, Kd, ise, os, stime, rtime, sse = optimize_pid_for_system(
+                K, T1, T2, Td, surrogate_model, weights, constraints
+            )
 
-            except Exception as e:
-                st.error(f"Optimization failed: {e}")
+            st.success("✅ Optimization complete!")
+            st.markdown("#### Optimal PID Parameters")
+            st.write(f"Kp = {Kp:.4f}, Ki = {Ki:.4f}, Kd = {Kd:.4f}")
+
+            # === Step Response ===
+            import matplotlib.pyplot as plt
+            import numpy as np
+            import control
+
+            if T2 > 0:
+                G = control.tf([K], np.convolve([T1, 1], [T2, 1]))
+            else:
+                G = control.tf([K], [T1, 1])
+
+            P = control.tf([Kp], [1])
+            I = control.tf([Ki], [1, 0])
+            D = control.tf([Kd, 0], [1])
+            C = P + I + D
+
+            if Td > 0:
+                #G = control.series(control.pade(Td, 1)[0], G)
+                num, den = control.pade(Td, 1)
+                G_delay = control.tf(num, den)
+                G = control.series(G_delay, G)
+
+
+            sys_cl = control.feedback(C * G, 1)
+
+            t = np.linspace(0, max(2 * (T1 + T2 + Td), 100), 1000)
+            t, y = control.step_response(sys_cl, t)
+            u = np.ones_like(t)
+            e = u - y
+
+            fig1, ax1 = plt.subplots()
+            ax1.plot(t, y, label="Output y(t)")
+            ax1.plot(t, u, "--", label="Setpoint r(t)=1", color="black")
+            ax1.set_title("Step Response")
+            ax1.set_xlabel("Time [s]")
+            ax1.set_ylabel("Output")
+            ax1.grid(True)
+            ax1.legend()
+            st.pyplot(fig1)
+
+            fig2, ax2 = plt.subplots()
+            ax2.plot(t, e, color="crimson", label="Error e(t)")
+            ax2.set_title("Tracking Error")
+            ax2.set_xlabel("Time [s]")
+            ax2.set_ylabel("Error")
+            ax2.grid(True)
+            ax2.legend()
+            st.pyplot(fig2)
+
+        except Exception as e:
+            st.error(f"❌ Optimization failed: {e}")
+
+
+
                 
 elif mode == "🧪 Simulink Validation":
     st.success("✅ Entered Simulink Validation mode")  # Debug marker
