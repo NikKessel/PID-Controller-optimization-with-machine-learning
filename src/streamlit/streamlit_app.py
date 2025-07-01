@@ -4,11 +4,13 @@ import numpy as np
 import joblib
 import os
 import pandas as pd
+import control
 from control import tf, feedback, step_response, pade
 from control.matlab import tf, feedback, step
 from utils.predict_pid import predict_pid_params
 from utils.simulink_runner import run_simulink_simulation
-
+from scipy.signal import step
+from scipy.integrate import simpson
 
 # Set page config###
 #test
@@ -164,11 +166,10 @@ if mode == "🔍 Predict PID":
                 T = T1 + T2 if T2 > 0 else T1
                 Kp = 1.2 * T / (K * L)
                 Ti = 2 * L
-                Td = 0.5 * L
+                Td = 0.5* L
                 Ki = Kp / Ti
                 Kd = Kp * Td
                 return Kp, Ki, Kd
-
             def chr_pid(K, T1, T2, L, overshoot=0):
                 T = T1 + T2 if T2 > 0 else T1
                 if overshoot == 0:
@@ -187,16 +188,46 @@ if mode == "🔍 Predict PID":
             L = Td  # clarity
             Kp_ml, Ki_ml, Kd_ml = Kp, Ki, Kd
             Kp_zn, Ki_zn, Kd_zn = zn_pid(K, T1, T2, L)
-            Kp_chr, Ki_chr, Kd_chr = chr_pid(K, T1, T2, L, overshoot=0)
+            Kp_chr0, Ki_chr0, Kd_chr0 = chr_pid(K, T1, T2, L, overshoot=0)
+            Kp_chr20, Ki_chr20, Kd_chr20 = chr_pid(K, T1, T2, L, overshoot=20)
 
             # === Simulate Step Responses ===
             t_ml, y_ml = simulate_response(K, T1, T2, L, Kp_ml, Ki_ml, Kd_ml, T_final=t_max)
             t_zn, y_zn = simulate_response(K, T1, T2, L, Kp_zn, Ki_zn, Kd_zn, T_final=t_max)
-            t_chr, y_chr = simulate_response(K, T1, T2, L, Kp_chr, Ki_chr, Kd_chr, T_final=t_max)
+            t_chr0, y_chr0 = simulate_response(K, T1, T2, L, Kp_chr0, Ki_chr0, Kd_chr0, T_final=t_max)
+            t_chr20, y_chr20 = simulate_response(K, T1, T2, L, Kp_chr20, Ki_chr20, Kd_chr20, T_final=t_max)
 
-            
             # === Debug Print for PID parameters ===
             st.markdown("### 🔧 PID Parameter Debug")
+            st.markdown("### 📐 Calculation Breakdown")
+
+            T_eff = T1 + T2 if T2 > 0 else T1
+
+            st.code(f"""
+            🔧 Effective Time Constant:
+                T = T1 + T2 = {T1:.3f} + {T2:.3f} = {T_eff:.3f}
+
+            === Ziegler–Nichols ===
+            Kp = 1.2 × T / (K × L) = 1.2 × {T_eff:.3f} / ({K:.3f} × {L:.3f}) = {Kp_zn:.4f}
+            Ti = 2 × L = 2 × {L:.3f} = {2 * L:.4f}
+            Td = 0.5 × L = 0.5 × {L:.3f} = {0.5 * L:.4f}
+            Ki = Kp / Ti = {Kp_zn:.4f} / {2 * L:.4f} = {Ki_zn:.4f}
+            Kd = Kp × Td = {Kp_zn:.4f} × {0.5 * L:.4f} = {Kd_zn:.4f}
+
+            === CHR (0% Overshoot) ===
+            Kp = 0.6 × T / (K × L) = 0.6 × {T_eff:.3f} / ({K:.3f} × {L:.3f}) = {Kp_chr0:.4f}
+            Ti = L = {L:.3f}
+            Td = 0.5 × L = {0.5 * L:.4f}
+            Ki = Kp / Ti = {Kp_chr0:.4f} / {L:.4f} = {Ki_chr0:.4f}
+            Kd = Kp × Td = {Kp_chr0:.4f} × {0.5 * L:.4f} = {Kd_chr0:.4f}
+
+            === CHR (20% Overshoot) ===
+            Kp = 0.95 × T / (K × L) = 0.95 × {T_eff:.3f} / ({K:.3f} × {L:.3f}) = {Kp_chr20:.4f}
+            Ti = 1.35 × L = 1.35 × {L:.3f} = {1.35 * L:.4f}
+            Td = 0.47 × L = 0.47 × {L:.3f} = {0.47 * L:.4f}
+            Ki = Kp / Ti = {Kp_chr20:.4f} / {1.35 * L:.4f} = {Ki_chr20:.4f}
+            Kd = Kp × Td = {Kp_chr20:.4f} × {0.47 * L:.4f} = {Kd_chr20:.4f}
+            """, language="text")
 
             st.code(f"""
             🔍 Input Parameters:
@@ -215,10 +246,15 @@ if mode == "🔍 Predict PID":
                 Ki = {Ki_zn:.4f}
                 Kd = {Kd_zn:.4f}
 
-            📊 CHR (0% OS):
-                Kp = {Kp_chr:.4f}
-                Ki = {Ki_chr:.4f}
-                Kd = {Kd_chr:.4f}
+            📊 CHR (0% Overshoot):
+                Kp = {Kp_chr0:.4f}
+                Ki = {Ki_chr0:.4f}
+                Kd = {Kd_chr0:.4f}
+
+            📊 CHR (20% Overshoot):
+                Kp = {Kp_chr20:.4f}
+                Ki = {Ki_chr20:.4f}
+                Kd = {Kd_chr20:.4f}
             """, language="text")
 
 
@@ -227,8 +263,13 @@ if mode == "🔍 Predict PID":
             fig, ax = plt.subplots(figsize=(7, 4))
             ax.plot(t_ml, y_ml, label="ML Predicted PID", linewidth=2)
             ax.plot(t_zn, y_zn, '--', label="Ziegler–Nichols")
-            ax.plot(t_chr, y_chr, ":", label="CHR (0% OS)")
-            ax.plot(t_ml, np.ones_like(t_ml)*K, "k--", label=f"Step Input ({K:.2f})")
+            ax.plot(t_chr0, y_chr0, ":", label="CHR (0% OS)")
+            ax.plot(t_chr20, y_chr20, "-.", label="CHR (20% OS)")
+            #ax.plot(t_ml, np.ones_like(t_ml)*K, "k--", label=f"Step Input ({1:.2f})")
+            step_input = np.ones_like(t_ml)
+            step_input[t_ml < 0.01] = 0  # Optional: simulate visible step
+            ax.plot(t_ml, step_input, "k--", label="Step Input (0 → 1)")
+
             ax.set_xlabel("Time [s]")
             ax.set_ylabel("Output")
             ax.set_title("Closed-Loop Step Response")
@@ -236,6 +277,8 @@ if mode == "🔍 Predict PID":
             ax.grid(True)
             ax.legend()
             st.pyplot(fig)
+
+
 
 
             def compute_and_plot_control_effort(K, T1, T2, Td, Kp, Ki, Kd, T_final=100, N=1000):
@@ -296,40 +339,38 @@ if mode == "🔍 Predict PID":
 
 
 
-
-elif mode ==  "📊 Evaluate PID":
+elif mode == "📊 Evaluate PID":
     st.info("Evaluate performance of a given PID configuration")
 
+    # === User Inputs ===
     K = st.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=1.0)
     T1 = st.number_input("T1 (Time Constant in s)", min_value=1.0, max_value=50.0, value=20.0)
-    T2 = st.number_input("T2 (2nd Time Constant in s)", min_value=0.0, max_value=50.0, value=10.0) 
-    Td = st.number_input("Td (Dead Time in s)", min_value=0.0, max_value=5.0, value=1.0) 
+    T2 = st.number_input("T2 (2nd Time Constant in s)", min_value=0.0, max_value=50.0, value=10.0)
+    Td = st.number_input("Td (Dead Time in s)", min_value=0.0, max_value=5.0, value=1.0)
 
     Kp = st.number_input("Kp", min_value=0.0, max_value=10.0, value=2.0)
     Ki = st.number_input("Ki", min_value=0.0, max_value=10.0, value=0.1)
     Kd = st.number_input("Kd", min_value=0.0, max_value=10.0, value=1.0)
 
+    # === Load Surrogate Model ===
     model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
     model_path = os.path.join(model_dir, "model_surrogate.joblib")
 
     try:
         surrogate_model = joblib.load(model_path)
     except Exception as e:
-        st.error(f"Failed to load surrogate model: {e}")
+        st.error(f"❌ Failed to load surrogate model: {e}")
         surrogate_model = None
 
     if st.button("📊 Evaluate Performance", key="eval_button") and surrogate_model:
         try:
 
-            
-            # Create DataFrame with proper column names
-            import pandas as pd
 
-            
 
+            # === Prepare Input ===
             X_eval = pd.DataFrame({
                 'K': [K],
-                'T1': [T1], 
+                'T1': [T1],
                 'T2': [T2],
                 'Td': [Td],
                 'Kp': [Kp],
@@ -337,34 +378,97 @@ elif mode ==  "📊 Evaluate PID":
                 'Kd': [Kd],
             })
 
+            # === Surrogate Prediction ===
             prediction = surrogate_model.predict(X_eval)
-            ise, sse, rise_time, settling_time, overshoot = prediction[0]            
-            st.success("Evaluation complete!")
+            ise_pred, sse_pred, rise_time_pred, settling_time_pred, overshoot_pred = prediction[0]
 
-            # === Display Metrics ===
-            st.markdown("### 📈 Predicted Performance Metrics")
-            col1, col2, col3 = st.columns(3)
-            col1.metric("ISE", f"{ise:.4f}")
-            col2.metric("SSE", f"{sse:.5f}")
-            col3.metric("Overshoot", f"{overshoot:.1f} %")
+            # === Simulate Closed-Loop System ===
+            if T2 > 0:
+                den = np.convolve([T1, 1], [T2, 1])
+            else:
+                den = [T1, 1]
+            G = control.tf([K], den)
 
-            col4, col5 = st.columns(2)
-            col4.metric("Settling Time", f"{settling_time:.2f} s")
-            col5.metric("Rise Time", f"{rise_time:.2f} s")
+            if Td > 0:
+                # Optional: Add delay approximation (can skip if unstable)
+                try:
+                    G = control.pade(Td, 1)[0] * G
+                except:
+                    st.warning("Pade approximation failed; skipping dead time.")
+            C = control.tf([Kd, Kp, Ki], [1, 0])
 
-            st.markdown("#### Simulated Step Response")
-            t = np.linspace(0, 100, 500)
-            y = 1 - np.exp(-t / 15) * np.cos(t / 10)
-            fig, ax = plt.subplots(figsize=(6, 4))  # Width=6, Height=4 inches
-            ax.plot(t, y, label="User PID Response")
+            sys_cl = control.feedback(C * G, 1)
+
+            t = np.linspace(0, 1000, 20000)
+            t, y = control.step_response(sys_cl, T=t)
+
+            # === Compute Actual Metrics ===
+            # === Compute Actual Metrics ===
+            u = np.ones_like(t)
+            e = u - y
+            ise_true = simpson(e**2, t)
+            sse_true = abs(1 - y[-1])
+            overshoot_true = (np.max(y) - 1) * 100
+
+            # === Robust Rise Time: time from 10% to 90% of final value ===
+            try:
+                final_val = y[-1]
+                rise_start = np.where(y >= 0.1 * final_val)[0][0]
+                rise_end = np.where(y >= 0.9 * final_val)[0][0]
+                rise_time_true = t[rise_end] - t[rise_start]
+            except Exception:
+                rise_time_true = np.nan
+
+            # === Robust Settling Time: time after which output stays within ±2% ===
+            try:
+                tolerance = 0.02 * final_val
+                within_bounds = np.abs(y - final_val) <= tolerance
+
+                # Find first index from which all remaining values are within bounds
+                settling_time_true = t[-1]  # fallback if never settles
+                for i in range(len(y)):
+                    if np.all(within_bounds[i:]):
+                        settling_time_true = t[i]
+                        break
+            except Exception:
+                settling_time_true = np.nan
+
+            # === Display Comparison Table ===
+            st.markdown("### 📊 Performance: Surrogate vs Simulation")
+            df_compare = pd.DataFrame({
+                "Metric": ["ISE", "SSE", "Overshoot [%]", "Settling Time [s]", "Rise Time [s]"],
+                "Predicted": [f"{ise_pred:.4f}", f"{sse_pred:.5f}", f"{overshoot_pred:.2f}",
+                              f"{settling_time_pred:.2f}", f"{rise_time_pred:.2f}"],
+                "Simulated": [f"{ise_true:.4f}", f"{sse_true:.5f}", f"{overshoot_true:.2f}",
+                              f"{settling_time_true:.2f}", f"{rise_time_true:.2f}"]
+            })
+            st.dataframe(df_compare)
+
+            # === Plot Step Response ===
+            st.markdown("#### 🧪 Closed-Loop Step Response")
+            fig, ax = plt.subplots(figsize=(7, 4))
+            ax.plot(t, y, label="Simulated Response", linewidth=2)
+            ax.plot(t, np.ones_like(t), "k--", label="Step Input", alpha=0.6)
             ax.set_xlabel("Time [s]")
             ax.set_ylabel("Output")
-            ax.set_title("Simulated Step Response")
+            ax.set_title("Step Response of G(s) + PID")
             ax.grid(True)
             ax.legend()
             st.pyplot(fig)
+
+            # === Plot Error Signal ===
+            st.markdown("#### 📉 Error Curve $e(t)$")
+            fig2, ax2 = plt.subplots(figsize=(7, 3))
+            ax2.plot(t, e, label="Tracking Error", color='red')
+            ax2.set_xlabel("Time [s]")
+            ax2.set_ylabel("e(t)")
+            ax2.grid(True)
+            ax2.set_title("Error Signal Over Time")
+            st.pyplot(fig2)
+
         except Exception as e:
-            st.error(f"Evaluation failed: {e}")
+            st.error(f"❌ Evaluation failed: {e}")
+
 
 elif mode == "⚙️ Optimize PID":
     
