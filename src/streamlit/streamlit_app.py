@@ -107,7 +107,10 @@ if mode == "🏠 Home":
 
 # --- Conditional ML model selection ---
 if mode == "🔍 Predict PID":
-    
+    julia_env_path = os.path.join(os.getcwd(), 'julia_env')
+
+    if not os.path.exists(julia_env_path):
+        os.makedirs(julia_env_path)
     model_choice = st.sidebar.selectbox("🤖 ML Model", ["Random Forest", "MLP", "XGBoost", "Symbolic", "DGP"], key="model_select")
     if "predict_clicked" not in st.session_state: ####
         st.session_state.predict_clicked = False
@@ -235,8 +238,7 @@ if mode == "🔍 Predict PID":
                 model = joblib.load(model_path)
 
                 from utils.predict_pid import predict_pid_params
-                st.write(f"🔍 [DEBUG] model_choice: {model_choice}")
-                st.write(f"🔍 [DEBUG] X input shape: {X.shape} | X = {X}")
+
 
                 Kp, Ki, Kd = predict_pid_params(model, X)
 
