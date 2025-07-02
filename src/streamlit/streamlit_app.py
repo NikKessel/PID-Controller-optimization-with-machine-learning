@@ -11,6 +11,9 @@ from utils.predict_pid import predict_pid_params
 from utils.simulink_runner import run_simulink_simulation
 from scipy.signal import step
 from scipy.integrate import simpson
+import plotly.graph_objects as go
+
+
 
 # Set page config###
 #test
@@ -198,87 +201,264 @@ if mode == "🔍 Predict PID":
             t_chr20, y_chr20 = simulate_response(K, T1, T2, L, Kp_chr20, Ki_chr20, Kd_chr20, T_final=t_max)
 
             # === Debug Print for PID parameters ===
-            st.markdown("### 🔧 PID Parameter Debug")
-            st.markdown("### 📐 Calculation Breakdown")
+            #st.markdown("### 🔧 PID Parameter Debug")
+            #st.markdown("### 📐 Calculation Breakdown")
 
             T_eff = T1 + T2 if T2 > 0 else T1
+            with st.expander("🔧 Show Calculation Details"):
 
-            st.code(f"""
-            🔧 Effective Time Constant:
-                T = T1 + T2 = {T1:.3f} + {T2:.3f} = {T_eff:.3f}
+                st.code(f"""
+                🔧 Effective Time Constant:
+                    T = T1 + T2 = {T1:.3f} + {T2:.3f} = {T_eff:.3f}
 
-            === Ziegler–Nichols ===
-            Kp = 1.2 × T / (K × L) = 1.2 × {T_eff:.3f} / ({K:.3f} × {L:.3f}) = {Kp_zn:.4f}
-            Ti = 2 × L = 2 × {L:.3f} = {2 * L:.4f}
-            Td = 0.5 × L = 0.5 × {L:.3f} = {0.5 * L:.4f}
-            Ki = Kp / Ti = {Kp_zn:.4f} / {2 * L:.4f} = {Ki_zn:.4f}
-            Kd = Kp × Td = {Kp_zn:.4f} × {0.5 * L:.4f} = {Kd_zn:.4f}
+                === Ziegler–Nichols ===
+                Kp = 1.2 × T / (K × L) = 1.2 × {T_eff:.3f} / ({K:.3f} × {L:.3f}) = {Kp_zn:.4f}
+                Ti = 2 × L = 2 × {L:.3f} = {2 * L:.4f}
+                Td = 0.5 × L = 0.5 × {L:.3f} = {0.5 * L:.4f}
+                Ki = Kp / Ti = {Kp_zn:.4f} / {2 * L:.4f} = {Ki_zn:.4f}
+                Kd = Kp × Td = {Kp_zn:.4f} × {0.5 * L:.4f} = {Kd_zn:.4f}
 
-            === CHR (0% Overshoot) ===
-            Kp = 0.6 × T / (K × L) = 0.6 × {T_eff:.3f} / ({K:.3f} × {L:.3f}) = {Kp_chr0:.4f}
-            Ti = L = {L:.3f}
-            Td = 0.5 × L = {0.5 * L:.4f}
-            Ki = Kp / Ti = {Kp_chr0:.4f} / {L:.4f} = {Ki_chr0:.4f}
-            Kd = Kp × Td = {Kp_chr0:.4f} × {0.5 * L:.4f} = {Kd_chr0:.4f}
+                === CHR (0% Overshoot) ===
+                Kp = 0.6 × T / (K × L) = 0.6 × {T_eff:.3f} / ({K:.3f} × {L:.3f}) = {Kp_chr0:.4f}
+                Ti = L = {L:.3f}
+                Td = 0.5 × L = {0.5 * L:.4f}
+                Ki = Kp / Ti = {Kp_chr0:.4f} / {L:.4f} = {Ki_chr0:.4f}
+                Kd = Kp × Td = {Kp_chr0:.4f} × {0.5 * L:.4f} = {Kd_chr0:.4f}
 
-            === CHR (20% Overshoot) ===
-            Kp = 0.95 × T / (K × L) = 0.95 × {T_eff:.3f} / ({K:.3f} × {L:.3f}) = {Kp_chr20:.4f}
-            Ti = 1.35 × L = 1.35 × {L:.3f} = {1.35 * L:.4f}
-            Td = 0.47 × L = 0.47 × {L:.3f} = {0.47 * L:.4f}
-            Ki = Kp / Ti = {Kp_chr20:.4f} / {1.35 * L:.4f} = {Ki_chr20:.4f}
-            Kd = Kp × Td = {Kp_chr20:.4f} × {0.47 * L:.4f} = {Kd_chr20:.4f}
-            """, language="text")
+                === CHR (20% Overshoot) ===
+                Kp = 0.95 × T / (K × L) = 0.95 × {T_eff:.3f} / ({K:.3f} × {L:.3f}) = {Kp_chr20:.4f}
+                Ti = 1.35 × L = 1.35 × {L:.3f} = {1.35 * L:.4f}
+                Td = 0.47 × L = 0.47 × {L:.3f} = {0.47 * L:.4f}
+                Ki = Kp / Ti = {Kp_chr20:.4f} / {1.35 * L:.4f} = {Ki_chr20:.4f}
+                Kd = Kp × Td = {Kp_chr20:.4f} × {0.47 * L:.4f} = {Kd_chr20:.4f}
+                """, language="text")
+            with st.expander("🔧 Show Parameters"):
 
-            st.code(f"""
-            🔍 Input Parameters:
-                K  = {K:.3f}
-                T1 = {T1:.3f}
-                T2 = {T2:.3f}
-                L  = {L:.3f}
+                st.code(f"""
+                🔍 Input Parameters:
+                    K  = {K:.3f}
+                    T1 = {T1:.3f}
+                    T2 = {T2:.3f}
+                    L  = {L:.3f}
 
-            📊 ML Predicted:
-                Kp = {Kp_ml:.4f}
-                Ki = {Ki_ml:.4f}
-                Kd = {Kd_ml:.4f}
+                📊 ML Predicted:
+                    Kp = {Kp_ml:.4f}
+                    Ki = {Ki_ml:.4f}
+                    Kd = {Kd_ml:.4f}
 
-            📊 Ziegler-Nichols:
-                Kp = {Kp_zn:.4f}
-                Ki = {Ki_zn:.4f}
-                Kd = {Kd_zn:.4f}
+                📊 Ziegler-Nichols:
+                    Kp = {Kp_zn:.4f}
+                    Ki = {Ki_zn:.4f}
+                    Kd = {Kd_zn:.4f}
 
-            📊 CHR (0% Overshoot):
-                Kp = {Kp_chr0:.4f}
-                Ki = {Ki_chr0:.4f}
-                Kd = {Kd_chr0:.4f}
+                📊 CHR (0% Overshoot):
+                    Kp = {Kp_chr0:.4f}
+                    Ki = {Ki_chr0:.4f}
+                    Kd = {Kd_chr0:.4f}
 
-            📊 CHR (20% Overshoot):
-                Kp = {Kp_chr20:.4f}
-                Ki = {Ki_chr20:.4f}
-                Kd = {Kd_chr20:.4f}
-            """, language="text")
+                📊 CHR (20% Overshoot):
+                    Kp = {Kp_chr20:.4f}
+                    Ki = {Ki_chr20:.4f}
+                    Kd = {Kd_chr20:.4f}
+                """, language="text")
 
 
             # === Plot Step Responses ===
-            st.markdown("### Step Response")
-            fig, ax = plt.subplots(figsize=(7, 4))
-            ax.plot(t_ml, y_ml, label="ML Predicted PID", linewidth=2)
-            ax.plot(t_zn, y_zn, '--', label="Ziegler–Nichols")
-            ax.plot(t_chr0, y_chr0, ":", label="CHR (0% OS)")
-            ax.plot(t_chr20, y_chr20, "-.", label="CHR (20% OS)")
+            #st.markdown("### Step Response")
+            #fig, ax = plt.subplots(figsize=(7, 4))
+            #ax.plot(t_ml, y_ml, label="ML Predicted PID", linewidth=2)
+            #ax.plot(t_zn, y_zn, '--', label="Ziegler–Nichols")
+            #ax.plot(t_chr0, y_chr0, ":", label="CHR (0% OS)")
+            #ax.plot(t_chr20, y_chr20, "-.", label="CHR (20% OS)")
             #ax.plot(t_ml, np.ones_like(t_ml)*K, "k--", label=f"Step Input ({1:.2f})")
             step_input = np.ones_like(t_ml)
             step_input[t_ml < 0.01] = 0  # Optional: simulate visible step
-            ax.plot(t_ml, step_input, "k--", label="Step Input (0 → 1)")
+            #ax.plot(t_ml, step_input, "k--", label="Step Input (0 → 1)")
 
-            ax.set_xlabel("Time [s]")
-            ax.set_ylabel("Output")
-            ax.set_title("Closed-Loop Step Response")
-            ax.set_ylim(0, y_max)
-            ax.grid(True)
-            ax.legend()
-            st.pyplot(fig)
+            #ax.set_xlabel("Time [s]")
+            #ax.set_ylabel("Output")
+            #ax.set_title("Closed-Loop Step Response")
+            #ax.set_ylim(0, y_max)
+            #ax.grid(True)
+            #ax.legend()
+            #st.pyplot(fig)
+
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=t_ml, y=y_ml, mode='lines', name='ML Predicted PID'))
+            fig.add_trace(go.Scatter(x=t_zn, y=y_zn, mode='lines', name='Ziegler–Nichols', line=dict(dash='dash')))
+            fig.add_trace(go.Scatter(x=t_chr0, y=y_chr0, mode='lines', name='CHR (0% OS)', line=dict(dash='dot')))
+            fig.add_trace(go.Scatter(x=t_chr20, y=y_chr20, mode='lines', name='CHR (20% OS)', line=dict(dash='dashdot')))
+            fig.add_trace(go.Scatter(x=t_ml, y=step_input, mode='lines', name='Step Input (0 → 1)', line=dict(color='black', dash='dash')))
+
+            fig.update_layout(
+                title="Closed-Loop Step Response",
+                xaxis=dict(
+                    title="Time [s]",
+                    tickmode='linear',
+                    tick0=0,
+                    dtick=1,  # smaller time steps (e.g. 0.5 if you want more granularity)
+                ),
+                yaxis=dict(
+                    title="Output",
+                    tickmode='linear',
+                    tick0=0,
+                    dtick=0.2,  # finer vertical spacing
+                    range=[0, y_max],  # y_max as defined earlier
+                ),
+                legend=dict(
+                    x=1,
+                    y=0,
+                    xanchor='right',
+                    yanchor='bottom',
+                    orientation='v',  # vertical legend, you can also use 'h'
+                    bgcolor='rgba(255,255,255,0.8)',
+                    bordercolor='black',
+                    borderwidth=1
+                ),
+                template='plotly_white'
+            )
+            def compute_ise(t, y):
+                e = 1.0 - y  # step input is 1
+                ise = simpson(e**2, t)
+                return ise
+
+            def compute_metrics(t, y, label=""):
+                # === Rise Time (10% to 90%)
+                try:
+                    t_10 = t[np.where(y >= 0.1 * y[-1])[0][0]]
+                    t_90 = t[np.where(y >= 0.9 * y[-1])[0][0]]
+                    rise_time = t_90 - t_10
+                except IndexError:
+                    rise_time = np.nan
+
+                # === Settling Time (±5% band)
+                final_val = y[-1]
+                tol = 0.05 * abs(final_val)
+                lower = final_val - tol
+                upper = final_val + tol
+
+                within_bounds = (y >= lower) & (y <= upper)
+                settling_time = np.nan
+                for i in range(len(y)):
+                    if np.all(within_bounds[i:]):
+                        settling_time = t[i]
+                        break
+
+                # === Overshoot
+                overshoot = max(0.0, (np.max(y) - 1.0) * 100)
+                ise = compute_ise(t, y)
+
+                return rise_time, settling_time, overshoot, ise
+
+            # === Collect Metrics ===
+            metrics = {}
+            #metrics["ML"] = compute_metrics(t_ml, y_ml)
+            #metrics["ZN"] = compute_metrics(t_zn, y_zn)
+            #metrics["CHR 0%"] = compute_metrics(t_chr0, y_chr0)
+            #metrics["CHR 20%"] = compute_metrics(t_chr20, y_chr20)
+            metrics = {}
+            for label, (t, y) in {
+                "ML": (t_ml, y_ml),
+                "ZN": (t_zn, y_zn),
+                "CHR 0%": (t_chr0, y_chr0),
+                "CHR 20%": (t_chr20, y_chr20)
+            }.items():
+                rt, stt, os, ise = compute_metrics(t, y)
+                metrics[label] = (rt, stt, os, ise)
 
 
+            metric_rows = []
+            for label, (rt, stt, os, ise) in metrics.items():
+                metric_rows.append({
+                    "Controller": label,
+                    "Rise Time [s]": f"{rt:.2f}" if not np.isnan(rt) else "—",
+                    "Settling Time [s]": f"{stt:.2f}" if not np.isnan(stt) else "—",
+                    "Overshoot [%]": f"{os:.2f}" if not np.isnan(os) else "—",
+                    "ISE": f"{ise:.3f}" if not np.isnan(ise) else "—"
+
+                })
+
+            df_metrics = pd.DataFrame(metric_rows)
+
+            # === Display as nice table ===
+            st.markdown("### 📊 Key Performance Metrics (All Controllers)")
+            st.table(df_metrics)
+            # === Metric Extraction ===
+            # Rise Time
+            try:
+                t_10 = t_ml[np.where(y_ml >= 0.1)[0][0]]
+                t_90 = t_ml[np.where(y_ml >= 0.9)[0][0]]
+                rise_time = t_90 - t_10
+            except IndexError:
+                rise_time = np.nan
+
+            # Overshoot
+            overshoot_val = (np.max(y_ml) - 1.0) * 100
+            overshoot_time = t_ml[np.argmax(y_ml)] if np.max(y_ml) > 1 else np.nan
+
+            # Settling Time (within ±2%)
+            #within_bounds = np.abs(y_ml - 1.0) < 0.02
+            #settling_time = t_ml[np.where(within_bounds)[-1][-1]] if np.any(within_bounds) else np.nan
+            final_val = y_ml[-1]
+            tol = 0.05 * abs(final_val)
+            lower_bound = final_val - tol
+            upper_bound = final_val + tol
+
+            # Debug info
+            st.code(f"""
+            Final Value Estimate: {final_val:.4f}
+            Tolerance (±5%): ±{tol:.4f}
+            Acceptable Range: [{lower_bound:.4f}, {upper_bound:.4f}]
+            """)
+
+            within_bounds = (y_ml >= lower_bound) & (y_ml <= upper_bound)
+
+            # Find the last time index after which the signal always stays within bounds
+            settling_time = np.nan
+            for i in range(len(y_ml)):
+                if np.all(within_bounds[i:]):
+                    settling_time = t_ml[i]
+                    st.code(f"Settling starts at index {i}, time = {settling_time:.4f}s")
+                    break
+
+            if np.isnan(settling_time):
+                st.warning("⚠️ System never fully settles within ±5%.")
+
+
+            # === Annotate on Plotly Figure ===
+            if not np.isnan(rise_time):
+                fig.add_vline(
+                    x=rise_time,
+                    line_width=2, line_dash="dot", line_color="green",
+                    annotation_text="Rise Time", annotation_position="top right"
+                )
+
+            if not np.isnan(settling_time):
+                fig.add_vline(
+                    x=settling_time,
+                    line_width=2, line_dash="dot", line_color="orange",
+                    annotation_text="Settling Time", annotation_position="top right"
+                )
+
+            if not np.isnan(overshoot_time):
+                fig.add_trace(go.Scatter(
+                    x=[overshoot_time], y=[np.max(y_ml)],
+                    mode="markers+text",
+                    name="Overshoot",
+                    text=["Overshoot"],
+                    textposition="bottom center",
+                    marker=dict(size=10, color="red")
+                ))
+
+            # === Add Zoom Slider ===
+            #fig.update_layout(
+                #xaxis=dict(rangeslider=dict(visible=True))
+            #)
+
+            # === Optional: Metric Summary Below Plot ===
+
+
+            st.plotly_chart(fig, use_container_width=True)
 
 
             def compute_and_plot_control_effort(K, T1, T2, Td, Kp, Ki, Kd, T_final=100, N=1000):
@@ -520,11 +700,6 @@ elif mode == "⚙️ Optimize PID":
             "SSE": max_sse
         }
 
-        st.markdown("### 🔍 Debug Info")
-        st.write("**Plant:**", {"K": K, "T1": T1, "T2": T2, "Td": Td})
-        st.write("**Weights:**", weights)
-        st.write("**Constraints:**", constraints)
-
         from utils.optimize_pid import optimize_pid_for_system
 
         try:
@@ -537,9 +712,6 @@ elif mode == "⚙️ Optimize PID":
             st.write(f"Kp = {Kp:.4f}, Ki = {Ki:.4f}, Kd = {Kd:.4f}")
 
             # === Step Response ===
-            import matplotlib.pyplot as plt
-            import numpy as np
-            import control
 
             if T2 > 0:
                 G = control.tf([K], np.convolve([T1, 1], [T2, 1]))
