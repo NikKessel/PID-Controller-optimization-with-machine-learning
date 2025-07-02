@@ -6,3 +6,13 @@ pandas
 scikit-learn==1.6.1 
 streamlit
 xgboost
+streamlit
+matplotlib
+numpy
+pandas
+scipy
+control
+torch
+gpytorch
+plotly
+joblib
