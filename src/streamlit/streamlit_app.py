@@ -12,7 +12,9 @@ from utils.simulink_runner import run_simulink_simulation
 from scipy.signal import step
 from scipy.integrate import simpson
 import plotly.graph_objects as go
-
+import torch
+import gpytorch
+from gpytorch.settings import fast_pred_var
 
 
 # Set page config###
@@ -106,7 +108,7 @@ if mode == "🏠 Home":
 # --- Conditional ML model selection ---
 if mode == "🔍 Predict PID":
     
-    model_choice = st.sidebar.selectbox("🤖 ML Model", ["Random Forest", "MLP", "XGBoost"], key="model_select")
+    model_choice = st.sidebar.selectbox("🤖 ML Model", ["Random Forest", "MLP", "XGBoost", "Symbolic", "DGP"], key="model_select")
     if "predict_clicked" not in st.session_state: ####
         st.session_state.predict_clicked = False
 
@@ -121,33 +123,151 @@ if mode == "🔍 Predict PID":
     y_max = st.sidebar.slider("Y-Axis Max (Output)", 1.0, 5.0, 1.5, step=0.1, key="slider_y_max")
 
 
-
     if st.button("🔍 Predict PID"):
         st.session_state.predict_clicked = True
         try:
             model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
-            model_filename = f"model_{model_choice.lower().replace(' ', '_')}.joblib"
-            model_path = os.path.join(model_dir, model_filename)
-            model = joblib.load(model_path)
-            # Prepare input vector
-            if model_choice == "Random Forest":
-                X = np.array([[K, T1, T2, Td]])
-            elif model_choice == "MLP":
+
+            if model_choice in ["Random Forest", "MLP"]:
                 X = np.array([[K, T1, T2, Td]])
             elif model_choice == "XGBoost":
                 X = np.array([[K, T1, T2]])
+            else:
+                X = np.array([[K, T1, T2, Td]])  # full input for Symbolic and DGP
+
+            def load_and_predict_symb(param, K, T1, T2):
+                try:
+                    import pysr
+                except ImportError:
+                    raise ImportError("⚠️ PySR is required to load symbolic models. Install with: `pip install pysr`")
+
+                model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
+                model = joblib.load(os.path.join(model_dir, f"symbolic_{param}.pkl"))
+
+                # Only use the features you trained on
+                X = np.array([[K, T1, T2]])
+                st.write(f"🔍 [SYMB DEBUG] Input X.shape = {X.shape}, X = {X}")
+
+                assert X.shape[1] == 3, f"Expected 3 features for Symbolic model, got {X.shape[1]}"
+                # Predict log10-transformed output and invert it
+                y_log = model.predict(X)[0]
+                y = max(0.0, 10**y_log - 1e-6)
+
+                # Debug print
+                st.write(f"📊 Symbolic prediction for **{param}**:")
+                st.write(f"- Raw log10 output: `{y_log:.4f}`")
+                st.write(f"- Inverted: `{y:.4f}`")
+                st.write(f"- Features: K={K}, T1={T1}, T2={T2}")
+
+                return y
+
+            import torch
+            from gpytorch.settings import fast_pred_var
+            class DGPModel(gpytorch.models.ApproximateGP):
+                def __init__(self, input_dim):
+                    inducing_points = torch.randn(128, input_dim)
+                    variational_distribution = gpytorch.variational.MeanFieldVariationalDistribution(inducing_points.size(0))
+                    variational_strategy = gpytorch.variational.VariationalStrategy(
+                        self, inducing_points, variational_distribution, learn_inducing_locations=True
+                    )
+                    super().__init__(variational_strategy)
+                    self.mean_module = gpytorch.means.ZeroMean()
+                    self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+
+                def forward(self, x):
+                    mean = self.mean_module(x)
+                    covar = self.covar_module(x)
+                    return gpytorch.distributions.MultivariateNormal(mean, covar)
 
 
-            from utils.predict_pid import predict_pid_params
-            Kp, Ki, Kd = predict_pid_params(model, X)
-            #Kp_ml, Ki_ml, Kd_ml = predict_pid_params(model, X)
 
-            st.success("Prediction complete!")
+            K_T1 = K * T1
+            K_T2 = K * T2
+            eps = 1e-8
+            T1_T2_ratio = T1 / (T2 + eps)
+
+            X_raw = np.array([[K, T1, T2, K_T1, K_T2, T1_T2_ratio]])
+
+            def load_and_predict_dgp(param, X_raw):
+                import torch
+                import gpytorch
+                from gp_model import DGPModel  # or your specific DGP class
+                from gpytorch.settings import fast_pred_var
+
+                model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
+
+                # === Load scaler
+                scaler = joblib.load(os.path.join(model_dir, f"dgp_{param}_scaler.pkl"))
+                X_scaled = scaler.transform(X_raw)
+                X_tensor = torch.tensor(X_scaled, dtype=torch.float32)
+
+                # === Instantiate model and likelihood
+                model = DGPModel(input_dim=X_tensor.shape[1])
+                likelihood = gpytorch.likelihoods.GaussianLikelihood()
+
+                # === Load .pth checkpoints
+                model.load_state_dict(torch.load(os.path.join(model_dir, f"dgp_{param}.pth")))
+                likelihood.load_state_dict(torch.load(os.path.join(model_dir, f"dgp_{param}_likelihood.pth")))
+
+                model.eval()
+                likelihood.eval()
+
+                # === Predict
+                with torch.no_grad(), fast_pred_var():
+                    output = likelihood(model(X_tensor))
+                    y_pred = output.mean.item()
+                    
+                with torch.no_grad(), fast_pred_var():
+                    output = likelihood(model(X_tensor))
+                    y_pred_log = output.mean.item()
+                    st.write(f"📊 DGP raw log10 prediction for {param}: {y_pred_log:.6f}")
+                    # Invert log10 transform
+                    y_pred = 10 ** y_pred_log - 1e-6
+                    st.write(f"📊 DGP inverted prediction for {param}: {y_pred:.6f}")
+
+
+                return y_pred
+
+
+            if model_choice in ["Random Forest", "MLP", "XGBoost"]:
+                model_filename = f"model_{model_choice.lower().replace(' ', '_')}.joblib"
+                model_path = os.path.join(model_dir, model_filename)
+                model = joblib.load(model_path)
+
+                from utils.predict_pid import predict_pid_params
+                st.write(f"🔍 [DEBUG] model_choice: {model_choice}")
+                st.write(f"🔍 [DEBUG] X input shape: {X.shape} | X = {X}")
+
+                Kp, Ki, Kd = predict_pid_params(model, X)
+
+            elif model_choice == "Symbolic":
+                Kp = load_and_predict_symb("kp", K, T1, T2)
+                Ki = load_and_predict_symb("ki", K, T1, T2)
+                Kd = load_and_predict_symb("kd", K, T1, T2)
+
+            elif model_choice == "DGP":
+                Kp = load_and_predict_dgp("kp", X_raw)
+                Ki = load_and_predict_dgp("ki", X_raw)
+                Kd = load_and_predict_dgp("kd", X_raw)
+
+
+            else:
+                st.error("❌ Unknown model type selected.")
+                raise ValueError("Invalid model")
+
+            # only reached if prediction successful:
+            st.success("✅ Prediction complete!")
+            Kp_ml, Ki_ml, Kd_ml = Kp, Ki, Kd
 
             col1, col2, col3 = st.columns(3)
             col1.metric("Kp", f"{Kp:.3f}")
             col2.metric("Ki", f"{Ki:.5f}")
             col3.metric("Kd", f"{Kd:.2f}")
+
+
+
+
+
 
             # --- Real simulation ---
 
@@ -460,7 +580,10 @@ if mode == "🔍 Predict PID":
 
             st.plotly_chart(fig, use_container_width=True)
 
-
+        except Exception as e:
+            st.error(f"❌ Prediction failed: {e}")
+            Kp_ml = Ki_ml = Kd_ml = None  # prevent downstream crash
+            
             def compute_and_plot_control_effort(K, T1, T2, Td, Kp, Ki, Kd, T_final=100, N=1000):
                 # Time vector
                 t = np.linspace(0, T_final, N)
