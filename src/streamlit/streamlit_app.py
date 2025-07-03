@@ -251,6 +251,11 @@ if mode == "🔍 Predict PID":
                     raise FileNotFoundError(f"Y scaler not found at: {y_scaler_path}")
                 X_scaler = joblib.load(x_scaler_path)
                 y_scaler = joblib.load(y_scaler_path)
+                param_lower = param.lower()
+                param_cap = param.capitalize()
+
+                model_path = os.path.join(base_path, f"dgp_{param_lower}.pth")
+                likelihood_path = os.path.join(base_path, f"dgp_{param_lower}_likelihood.pth")
                 #model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
 
                 # === Load scalers
@@ -278,9 +283,9 @@ if mode == "🔍 Predict PID":
                 #noise=torch.ones(X_train_tensor.size(0)).to(device) * 1e-4
             #).to(device)
                 # === Load model weights
-                model.load_state_dict(torch.load(os.path.join(model_dir, f"dgp_{param}.pth")))
+                model.load_state_dict(torch.load(os.path.join(model_dir, f"dgp_{param_lower}.pth")))
                 #likelihood.load_state_dict(torch.load(os.path.join(model_dir, f"dgp_{param}_likelihood.pth")))
-                likelihood.load_state_dict(torch.load(os.path.join(model_dir, f"dgp_{param}_likelihood.pth"), map_location=device))
+                likelihood.load_state_dict(torch.load(os.path.join(model_dir, f"dgp_{param_lower}_likelihood.pth"), map_location=device))
 
                 model.eval()
                 likelihood.eval()
