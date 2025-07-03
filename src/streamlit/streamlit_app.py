@@ -300,10 +300,10 @@ if mode == "🔍 Predict PID":
                     y_std_inv = abs(upper - lower) / 2
 
                 # === Debug info
-                st.write(f"🔍 Scaled prediction for {param}: {y_pred:.4f}")
-                if return_std:
-                    st.write(f"📉 Scaled std: ±{y_std:.4f}")
-                st.write(f"📈 Final prediction for {param}: {y_pred_inv:.6f}" + (f" ± {y_std_inv:.6f}" if return_std else ""))
+                #st.write(f"🔍 Scaled prediction for {param}: {y_pred:.4f}")
+                #if return_std:
+                    #st.write(f"📉 Scaled std: ±{y_std:.4f}")
+                #st.write(f"📈 Final prediction for {param}: {y_pred_inv:.6f}" + (f" ± {y_std_inv:.6f}" if return_std else ""))
 
                 # === Return structure
                 if return_all:
@@ -629,11 +629,11 @@ if mode == "🔍 Predict PID":
             upper_bound = final_val + tol
 
             # Debug info
-            st.code(f"""
-            Final Value Estimate: {final_val:.4f}
-            Tolerance (±5%): ±{tol:.4f}
-            Acceptable Range: [{lower_bound:.4f}, {upper_bound:.4f}]
-            """)
+            #st.code(f"""
+            #Final Value Estimate: {final_val:.4f}
+            #Tolerance (±5%): ±{tol:.4f}
+            #Acceptable Range: [{lower_bound:.4f}, {upper_bound:.4f}]
+            #""")
 
             within_bounds = (y_ml >= lower_bound) & (y_ml <= upper_bound)
 
@@ -642,7 +642,7 @@ if mode == "🔍 Predict PID":
             for i in range(len(y_ml)):
                 if np.all(within_bounds[i:]):
                     settling_time = t_ml[i]
-                    st.code(f"Settling starts at index {i}, time = {settling_time:.4f}s")
+                    #st.code(f"Settling starts at index {i}, time = {settling_time:.4f}s")
                     break
 
             if np.isnan(settling_time):
