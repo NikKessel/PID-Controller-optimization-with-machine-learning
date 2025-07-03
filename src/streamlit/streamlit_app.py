@@ -22,6 +22,9 @@ from gpytorch.settings import fast_pred_var
 # === Page Config ===
 st.set_page_config(page_title="PID Optimizer", layout="wide", initial_sidebar_state="expanded")
 
+
+
+
 # === Sidebar Navigation ===
 st.sidebar.title("Navigation")
 mode = st.sidebar.radio("Choose Mode", [
@@ -1037,10 +1040,27 @@ elif mode == "⚙️ Optimize PID":
     T2 = st.sidebar.number_input("T2", min_value=0.0, max_value=50.0, value=3.0)
     Td = st.sidebar.number_input("Td (Dead Time)", min_value=0.0, max_value=5.0, value=0.6)
     def predict_dgp(param, log_transform=True):
-        base_path = os.path.join(os.path.dirname(__file__), "streamlit_models", "dgp")
+        #h = os.path.join(os.path.dirname(__file__), "streamlit_models", "dgp")
+        base_path = os.path.join(os.path.dirname(__file__), "streamlit", "streamlit_models", "dgp")
+
         scaler = joblib.load(os.path.join(base_path, f"{param}_scaler.pkl"))
         model = SimpleDGPModel(input_dim=7, num_inducing=64)
         likelihood = gpytorch.likelihoods.GaussianLikelihood()
+        
+        model_file = os.path.join(base_path, f"{param}_model.pth")
+        likelihood_file = os.path.join(base_path, f"{param}_likelihood.pth")
+        scaler_file = os.path.join(base_path, f"{param}_scaler.pkl")
+
+        print("🔍 Checking paths:")
+        print("Model Path      :", model_file)
+        print("Likelihood Path :", likelihood_file)
+        print("Scaler Path     :", scaler_file)
+
+        assert os.path.exists(model_file), f"❌ Model file not found: {model_file}"
+        assert os.path.exists(likelihood_file), f"❌ Likelihood file not found: {likelihood_file}"
+        assert os.path.exists(scaler_file), f"❌ Scaler file not found: {scaler_file}"
+
+        
         model.load_state_dict(torch.load(os.path.join(base_path, f"{param}_model.pth")))
         likelihood.load_state_dict(torch.load(os.path.join(base_path, f"{param}_likelihood.pth")))
         model.eval()
@@ -1171,15 +1191,42 @@ elif mode == "⚙️ Optimize PID":
         }
 
         from utils.optimize_pid import optimize_pid_for_system
-
         try:
-            Kp, Ki, Kd, ise, os, stime, rtime, sse, top5_df = optimize_pid_for_system(
-                K, T1, T2, Td, surrogate_model, weights, constraints
-            )
+            #Kp, Ki, Kd, ise, os, stime, rtime, sse, top5_df = optimize_pid_for_system(
+                        #K, T1, T2, Td, model_choice, weights, constraints
+                    #)
+            result = optimize_pid_for_system(K, T1, T2, Td, model_choice, weights, constraints)
 
-            st.success("✅ Optimization complete!")
-            st.markdown("#### Optimal PID Parameters")
-            st.write(f"Kp = {Kp:.4f}, Ki = {Ki:.4f}, Kd = {Kd:.4f}")
+            if result is None or not result.get('success', False):
+                st.error("❌ Optimization failed: " + (result.get('message') or result.get('error') or 'Unknown error'))
+            else:
+                best_params = result['best_params']
+                Kp, Ki, Kd = best_params
+
+                best_metrics = result['best_metrics']
+
+                if model_choice == "MLP":
+                    # MLP returns means only (5 values), set std=0
+                    ise, sse, rtime, stime, os = best_metrics
+                    ise_std = sse_std = rtime_std = stime_std = os_std = 0.0
+                elif model_choice == "DGP":
+                    # DGP returns tuple (means, stds)
+                    means, stds = best_metrics
+                    ise, rtime, stime, os = means
+                    ise_std, rtime_std, stime_std, os_std = stds
+                    sse = 0.0
+                    sse_std = 0.0
+                else:
+                    # Fallback values
+                    ise = sse = rtime = stime = os = None
+                    ise_std = sse_std = rtime_std = stime_std = os_std = 0.0
+
+
+
+                st.success("✅ Optimization complete!")
+                st.markdown("#### Optimal PID Parameters")
+                st.write(f"Kp = {Kp:.4f}, Ki = {Ki:.4f}, Kd = {Kd:.4f}")
+
             
             
                         # === Simulate Closed-Loop with Optimal PID for true metrics ===
@@ -1228,24 +1275,77 @@ elif mode == "⚙️ Optimize PID":
 
             st.markdown("#### 📊 Performance Comparison: Surrogate vs Simulation")
 
+            
             combined_df = pd.DataFrame({
                 "Metric": ["ISE", "Overshoot (%)", "Settling Time (s)", "Rise Time (s)", "SSE"],
-                "Optimized (Predicted)": [ise, os, stime, rtime, sse],
-                "Simulated (True)": [ise_sim, overshoot_sim, settling_time_sim, rise_time_sim, sse_sim]
+                "Optimized (Predicted)": [
+                    f"{ise:.2f} ± {ise_std:.2f}",
+                    f"{os:.2f} ± {os_std:.2f}",
+                    f"{stime:.2f} ± {stime_std:.2f}",
+                    f"{rtime:.2f} ± {rtime_std:.2f}",
+                    f"{sse:.2f} ± {sse_std:.2f}"
+                ],
+                "Simulated (True)": [
+                    f"{ise_sim:.2f}", f"{overshoot_sim:.2f}",
+                    f"{settling_time_sim:.2f}", f"{rise_time_sim:.2f}", f"{sse_sim:.2f}"
+                ]
             })
 
-            st.table(combined_df.style.format({
-                "Optimized (Predicted)": "{:.2f}",
-                "Simulated (True)": "{:.2f}"
-            }))
+            st.table(data=combined_df)
 
+            
+            
+            evaluated = result.get('evaluated_controllers', [])
+            if not evaluated:
+                st.info("No evaluated controllers available.")
+            else:
+                feasible_controllers = pd.DataFrame(evaluated)
 
-            st.markdown("#### 🏆 Top 5 PID Controllers")
-            st.dataframe(top5_df.style.format({
-                'Kp': '{:.3f}', 'Ki': '{:.3f}', 'Kd': '{:.3f}', 
-                'ISE': '{:.2f}', 'Overshoot': '{:.2f}', 'SettlingTime': '{:.2f}',
-                'RiseTime': '{:.2f}', 'SSE': '{:.3f}', 'Cost': '{:.2f}'
-            }))
+                unique_controllers = []
+
+                for idx, candidate in feasible_controllers.iterrows():
+                    candidate_params = candidate[['Kp', 'Ki', 'Kd']].values
+
+                    if not unique_controllers:
+                        unique_controllers.append(candidate)
+                        continue
+
+                    differences = [
+                        np.abs(candidate_params - np.array(ctrl[['Kp', 'Ki', 'Kd']]))
+                        for ctrl in unique_controllers
+                    ]
+
+                    is_different = all(np.any(diff >= 0.5) for diff in differences)
+
+                    if is_different:
+                        unique_controllers.append(candidate)
+                    else:
+                        st.write("→ Controller skipped (too similar).")
+
+                    if len(unique_controllers) >= 5:
+                        break
+
+                top5_df = pd.DataFrame(unique_controllers)
+
+                # Padding if fewer than 5 controllers found
+                if len(top5_df) < 5:
+                    additional_rows = 5 - len(top5_df)
+                    top5_df = pd.concat([
+                        top5_df,
+                        pd.DataFrame([{
+                            'Kp': np.nan, 'Ki': np.nan, 'Kd': np.nan,
+                            'ISE': np.nan, 'Overshoot': np.nan, 'SettlingTime': np.nan,
+                            'RiseTime': np.nan, 'SSE': np.nan, 'Cost': np.nan
+                        }] * additional_rows)
+                    ], ignore_index=True)
+
+                st.markdown("#### 🏆 Top 5 Distinct PID Controllers")
+                st.dataframe(top5_df.style.format({
+                    'Kp': '{:.3f}', 'Ki': '{:.3f}', 'Kd': '{:.3f}',
+                    'ISE': '{:.2f}', 'Overshoot': '{:.2f}', 'SettlingTime': '{:.2f}',
+                    'RiseTime': '{:.2f}', 'SSE': '{:.3f}', 'Cost': '{:.2f}'
+                }))
+
 
             # === Step Response ===
 
@@ -1294,22 +1394,92 @@ elif mode == "⚙️ Optimize PID":
             # Plot setpoint line
             ax1.plot(t, step_input, "--", color="black", label="Setpoint r(t)=1")
 
-            # === Output Plot
-            ax1.set_title("Step Response of Top 5 Controllers")
-            ax1.set_xlabel("Time [s]")
-            ax1.set_ylabel("Output y(t)")
-            ax1.grid(True)
-            ax1.legend()
 
-            # === Error Plot
-            ax2.set_title("Tracking Error of Top 5 Controllers")
-            ax2.set_xlabel("Time [s]")
-            ax2.set_ylabel("Error e(t)")
-            ax2.grid(True)
-            ax2.legend()
+            # === Sidebar slider for zooming time
+            t_start, t_end = st.sidebar.slider(
+                "Time Window [s] (Top 5 Plot)",
+                min_value=float(np.min(t)),
+                max_value=float(np.max(t)),
+                value=(float(np.min(t)), float(np.max(t))),
+                step=1.0
+            )
 
-            st.pyplot(fig1)
-            st.pyplot(fig2)
+            # === Step Response Plot (Top 5 Controllers)
+            st.markdown("#### 🧪 Step Responses of Top 5 Controllers")
+            fig_step5 = go.Figure()
+            fig_error5 = go.Figure()
+
+            #for idx, (Kp_i, Ki_i, Kd_i) in enumerate(top_5_pid_params):
+            for idx, row in top5_df.iterrows():
+                if pd.isna(row["Kp"]):
+                    continue  # skip padded rows
+
+                Kp_i, Ki_i, Kd_i = row["Kp"], row["Ki"], row["Kd"]
+
+
+                try:
+                    P = control.tf([Kp_i], [1])
+                    I = control.tf([Ki_i], [1, 0])
+                    D = control.tf([Kd_i, 0], [1])
+                    C = P + I + D
+                    sys_cl = control.feedback(C * G, 1)
+
+                    t_response, y_response = control.step_response(sys_cl, t)
+                    e_response = 1.0 - y_response
+
+                    fig_step5.add_trace(go.Scatter(
+                        x=t_response,
+                        y=y_response,
+                        mode='lines',
+                        name=f"#{idx+1}: Kp={Kp_i:.2f}, Ki={Ki_i:.2f}, Kd={Kd_i:.2f}"
+                    ))
+
+                    fig_error5.add_trace(go.Scatter(
+                        x=t_response,
+                        y=e_response,
+                        mode='lines',
+                        name=f"#{idx+1}"
+                    ))
+
+                except Exception as e:
+                    print(f"⚠️ Skipped controller #{idx+1} due to instability or simulation error: {e}")
+
+            # Add setpoint line
+            fig_step5.add_trace(go.Scatter(
+                x=t, y=step_input,
+                mode='lines',
+                name="Setpoint r(t)=1",
+                line=dict(color='black', dash='dash'),
+                opacity=0.6
+            ))
+
+            # === Layout for Step Response
+            fig_step5.update_layout(
+                title="Step Response of Top 5 Controllers",
+                xaxis=dict(title="Time [s]", range=[t_start, t_end], rangeslider=dict(visible=False)),
+                yaxis=dict(title="Output y(t)", range=[0, max(1.2, np.max(step_input))]),
+                legend=dict(
+                    x=1, y=0, xanchor='right', yanchor='bottom',
+                    bgcolor='rgba(255,255,255,0.8)', bordercolor='black', borderwidth=1
+                ),
+                template="plotly_white"
+            )
+
+            # === Layout for Error Curve
+            fig_error5.update_layout(
+                title="Tracking Error of Top 5 Controllers",
+                xaxis=dict(title="Time [s]", range=[t_start, t_end], rangeslider=dict(visible=False)),
+                yaxis=dict(title="Error e(t)"),
+                legend=dict(
+                    x=1, y=0, xanchor='right', yanchor='bottom',
+                    bgcolor='rgba(255,255,255,0.8)', bordercolor='black', borderwidth=1
+                ),
+                template="plotly_white"
+            )
+
+            # === Display in Streamlit
+            st.plotly_chart(fig_step5, use_container_width=True)
+            st.plotly_chart(fig_error5, use_container_width=True)
 
 
         except Exception as e:
