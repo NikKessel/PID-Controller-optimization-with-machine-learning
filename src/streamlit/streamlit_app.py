@@ -198,7 +198,8 @@ if mode == "🔍 Predict PID":
                 #base_path = os.path.join(os.path.dirname(__file__), "streamlit_models")
 
                 #base_path = os.path.join(os.getcwd(), "streamlit_models")
-                base_path = os.path.join(os.path.dirname(__file__), "..", "streamlit_models")
+                base_path = os.path.join(os.path.dirname(__file__), "streamlit_models")
+
                 #base_path = os.path.abspath(base_path)  # resolve relative path
                 st.write("Current file path:", os.path.abspath(__file__))
                 st.write("Model folder:", base_path)
