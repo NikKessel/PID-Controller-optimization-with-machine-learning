@@ -198,12 +198,13 @@ if mode == "🔍 Predict PID":
                 base_path = os.path.join(os.path.dirname(__file__), "streamlit_models")
 
 
-                #model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
+                model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
 
                 # === Load scalers
-                X_scaler = joblib.load(os.path.join(base_path, f"dgp_{param}_scaler_X.pkl"))
-                y_scaler = joblib.load(os.path.join(base_path, f"dgp_{param}_scaler_y.pkl"))
-
+                #X_scaler = joblib.load(os.path.join(base_path, f"dgp_{param}_scaler_X.pkl"))
+                #y_scaler = joblib.load(os.path.join(base_path, f"dgp_{param}_scaler_y.pkl"))
+                X_scaler = joblib.load(os.path.join(model_dir, f"dgp_{param}_scaler_X.pkl"))
+                y_scaler = joblib.load(os.path.join(model_dir, f"dgp_{param}_scaler_y.pkl"))
                 # === Preprocess input
                 X_scaled = X_scaler.transform(X_raw)
                 X_tensor = torch.tensor(X_scaled, dtype=torch.float32)
