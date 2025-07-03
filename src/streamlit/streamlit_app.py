@@ -197,8 +197,10 @@ if mode == "🔍 Predict PID":
             def load_and_predict_dgp(param, X_raw, return_std=False, return_all=False):
                 #base_path = os.path.join(os.path.dirname(__file__), "streamlit_models")
 
-                base_path = os.path.join(os.getcwd(), "streamlit_models")
-                
+                #base_path = os.path.join(os.getcwd(), "streamlit_models")
+                base_path = os.path.join(os.path.dirname(__file__), "..", "streamlit_models")
+                base_path = os.path.abspath(base_path)  # resolve relative path
+
                 # Method 2: Alternative - use path relative to the script file
                 # Uncomment this if Method 1 doesn't work
                 # base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "streamlit_models")
