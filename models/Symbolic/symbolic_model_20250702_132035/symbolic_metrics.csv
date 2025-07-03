@@ -1,0 +1,22 @@
+,Best Equation,R2,MAE
+Kp,"complexity                                                    6
+loss                                                   0.163247
+equation                      log(K * 0.22647382) * -0.32480046
+score                                                  0.094438
+sympy_format                      -0.32480046*log(0.22647382*K)
+lambda_format    PySRFunction(X=>-0.32480046*log(0.22647382*K))
+Name: 3, dtype: object",0.4073493705108088,0.5968165002819933
+Ki,"complexity                                                      10
+loss                                                      0.175292
+equation           (log((T2 + T1) * K) + -1.9697303) * -0.31232327
+score                                                      0.08967
+sympy_format       0.615192608314081 - 0.31232327*log(K*(T1 + T2))
+lambda_format    PySRFunction(X=>0.615192608314081 - 0.31232327...
+Name: 5, dtype: object",0.4140180684112531,0.3803653429515433
+Kd,"complexity                                                    5
+loss                                                   0.670914
+equation                        -0.63912636 / (T2 + 0.17486617)
+score                                                   0.21826
+sympy_format                      -0.63912636/(T2 + 0.17486617)
+lambda_format    PySRFunction(X=>-0.63912636/(T2 + 0.17486617))
+Name: 2, dtype: object",0.2561590506425414,0.37526343140736995

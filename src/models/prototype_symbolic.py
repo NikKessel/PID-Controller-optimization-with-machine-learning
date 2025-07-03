@@ -8,10 +8,11 @@ from pysr import PySRRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error, r2_score
 import joblib
+import seaborn as sns
 
 # === Load Data ===
 print("🔄 Loading dataset...")
-df = pd.read_csv(r"D:\BA\PID-Controller-optimization-with-machine-learning\src\data\pid_dataset_pidtune.csv")
+df = pd.read_csv(r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\src\data\pid_dataset_pidtune - Kopie.csv")
 #df = pd.read_csv(r"D:\BA\PID-Controller-optimization-with-machine-learning\src\data\pid_dataset_multi_ranges.csv")
 
 df = df.dropna(subset=["K", "T1", "T2", "Kp", "Ki", "Kd"])
@@ -21,21 +22,31 @@ print(f"✅ Dataset loaded with {len(df)} entries.")
 df["K_T1"] = df["K"] * df["T1"]
 df["K_T2"] = df["K"] * df["T2"]
 df["T1_T2_ratio"] = df["T1"] / (df["T2"] + 1e-3)
+df = df[(df["Kp"] > 0.01) & (df["Kp"] < 10)]
+df = df[(df["Ki"] > 0.01) & (df["Ki"] < 5)]
+df = df[(df["Kd"]  < 5)]
+df = df[(df["K"]  < 10)]
+df = df[(df["T1"]  < 50)]
+df = df[(df["T2"]  < 50)]
+sns.histplot(df["Kd"], bins=100)
+plt.title("Distribution of Kd in Training Set")
 
 # === Log-transform targets ===
 df["Kp_log"] = np.log10(df["Kp"] + 1e-6)
 df["Ki_log"] = np.log10(df["Ki"] + 1e-6)
 df["Kd_log"] = np.log10(df["Kd"] + 1e-6)
+df["Kd_log"] = np.clip(np.log10(df["Kd"] + 1e-6), -4, 2)
 
 # === Use subset of data for efficiency ===
 if len(df) > 3000:
     df = df.sample(n=3000, random_state=42)
 
-features = ["K", "T1", "T2", "K_T1", "K_T2", "T1_T2_ratio"]
+#features = ["K", "T1", "T2", "K_T1", "K_T2", "T1_T2_ratio"]
+features = ["K", "T1", "T2"]
 targets = ["Kp_log", "Ki_log", "Kd_log"]
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-output_dir = rf"D:\BA\PID-Controller-optimization-with-machine-learning\models\Symbolic\symbolic_model_{timestamp}"
+output_dir = rf"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\models\Symbolic\symbolic_model_{timestamp}"
 os.makedirs(output_dir, exist_ok=True)
 print(f"📁 Output directory created: {output_dir}")
 
@@ -53,8 +64,8 @@ for target in targets:
 
     model = PySRRegressor(
         model_selection="best",
-        niterations=100,
-        binary_operators=["+", "-", "*", "/"],
+        niterations=300,
+        binary_operators=["+", "*", "/"],
         unary_operators=["log", "exp", "sqrt"],
         extra_sympy_mappings={"sqrt": lambda x: x**0.5},
         loss="loss(x, y) = (x - y)^2",

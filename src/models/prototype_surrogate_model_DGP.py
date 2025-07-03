@@ -13,7 +13,7 @@ from torch.utils.data import TensorDataset, DataLoader
 
 # === Load and preprocess dataset ===
 df = pd.read_csv(r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\src\data\pid_dataset_pidtune.csv")
-df = df.dropna(subset=["K", "T1", "T2", "Kp", "Ki", "Kd", "ISE", "Overshoot", "SettlingTime", "RiseTime"])
+df = df.dropna(subset=["K", "T1", "T2","L", "Kp", "Ki", "Kd", "ISE", "Overshoot", "SettlingTime", "RiseTime"])
 df = df.sample(n=4000, random_state=42).reset_index(drop=True)
 
 # === Filter outliers ===
@@ -23,13 +23,13 @@ df = df[df["ISE"] < 100]
 df = df[df["ISE"] > 0.001]
 df = df[df["SettlingTime"] < 500]
 df = df[df["RiseTime"] < 300]
-df = df[df["SettlingTime"] > 0.1000]
-df = df[df["RiseTime"] > 0.1000]
-df = df[df["Overshoot"] > 0.001]
-df = df[df["Kp"] < 200 ]
+df = df[df["SettlingTime"] > 0.01000]
+df = df[df["RiseTime"] > 0.01000]
+#df = df[df["Overshoot"] > 0.001]
+df = df[df["Kp"] < 20 ]
 df = df[df["Kp"] > 0.3 ]
-df = df[df["Ki"] < 200]
-df = df[df["Kd"] < 200]
+df = df[df["Ki"] < 20]
+df = df[df["Kd"] < 20]
 print(f"After filtering: {df.shape}")
 
 # Add log-transformed targets
@@ -37,7 +37,7 @@ df["ISE_log"] = np.log1p(df["ISE"])
 df["SettlingTime_log"] = np.log1p(df["SettlingTime"])
 df["RiseTime_log"] = np.log1p(df["RiseTime"])
 
-features = ["K", "T1", "T2", "Kp", "Ki", "Kd"]
+features = ["K", "T1", "T2", "L", "Kp", "Ki", "Kd"]
 target_config = {
     "ISE_log": {"original": "ISE", "use_log": True},
     "Overshoot": {"original": "Overshoot", "use_log": False},

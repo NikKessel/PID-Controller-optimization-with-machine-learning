@@ -1,39 +1,38 @@
 % === Configuration ===
-num_samples = 1000000;           % Total number of systems
-T_final = max(300, 10 * (T1 + T2 + 1e-3)); % Simulation time
-results = {};                % Store metrics
-all_t = {}; all_y = {};      % Store responses
+num_samples = 30000;
+T_final = max(30);  % Simulation time
+results = {};
+all_t = {}; all_y = {};
 row = 1;
+
+% === DEAD TIME CONFIGURATION ===
+L_ratio_min = 0.0;
+L_ratio_max = 3;
 
 % === System Type Definitions ===
 system_definitions = {
-    % Label           Kmin  Kmax   T1min  T1max   T2min  T2max
-    "VeryLowGain",     0.01,  0.1,   10.0,  100.0,    10.0,   100.0;   % Thermal/biochemical
-    "LowGain",         0.1,   1.0,    3.0,   50.0,    1.0,   50.0;   % Tank/flow/HVAC
-    "MediumGain",      1.0,   5.0,    1.0,   20.0,    1.0,   20.0;   % General process
-    "HighGain",        5.0,  20.0,    0.2,    5.0,    0.2,    5.0;   % Drive/servo
-    "VeryHighGain",   20.0, 100.0,    0.01,   2.0,    0.01,   2.;   % Scaled fast loops
-
-
+    "VeryLowGain",     0.5, 2.8,   1.0, 50.0,   1.0, 50.0;
+    "LowGain",         0.9, 4.2,   1.0, 30.0,   1.0, 30.0;
+    "MediumGain",      0.8, 5.0,   6.0, 20.0,   6.0, 20.0;
+    "HighGain",        1.5, 6.0,   2.0, 10.0,   2.0, 10.0;
+    "VeryHighGain",    2.5, 7.0,   0.5, 3.0,    0.5, 3.0;
 };
-
-
 num_types = size(system_definitions, 1);
 
 % === PIDTUNE VARIATION RANGES ===
 pidtune_ranges = struct( ...
-    'wc_factor_min',     1, ...
-    'wc_factor_max',     10.0, ...
-    'phase_margin_min',  15, ...
-    'phase_margin_max',  60, ...
+    'wc_factor_min',     1.0, ...
+    'wc_factor_max',     5.0, ...
+    'phase_margin_min',  40, ...
+    'phase_margin_max',  80, ...
     'design_focus',      {{'reference-tracking', 'balanced', 'disturbance-rejection'}} ...
 );
 
-% === Main Loop ===
 fprintf('Starting PID dataset generation...\n');
+
 for i = 1:num_samples
     try
-        % === 1. Randomly choose system type ===
+        % === 1. Select Random System Type ===
         type_idx = randi(num_types);
         selected_type = system_definitions(type_idx, :);
         type_label = selected_type{1};
@@ -43,7 +42,7 @@ for i = 1:num_samples
 
         is_pt1 = rand() < 0.5;
 
-        % === 2. Generate system parameters ===
+        % === 2. Generate System Parameters ===
         K = rand() * (Kmax - Kmin) + Kmin;
         T1 = rand() * (T1max - T1min) + T1min;
 
@@ -57,68 +56,64 @@ for i = 1:num_samples
             system_type = "PT2_" + type_label;
         end
 
+        T_sum = T1 + T2;
+        L_ratio = rand() * (L_ratio_max - L_ratio_min) + L_ratio_min;
+        L = L_ratio * T_sum;
+
+        % === Transfer Function with Pade Approximation ===
         G = tf(K, den);
+        if L > 0
+            [num_d, den_d] = pade(L, 1);  % 1st-order Pade approx
+            delay_tf = tf(num_d, den_d);
+            G = delay_tf * G;
+        end
 
-        % === 3. PID Tuning with variation ===
-        % Compute Tsum and clamp wc range
+        % === 3. PID Tuning with Options ===
         Tsum = T1 + T2 + 1e-3;
-        wc_min = 0.01;
-        wc_max = 10;
-
-        % Sample wc
+        wc_min = 1.01;
+        wc_max = 15;
         wc_factor = rand() * (pidtune_ranges.wc_factor_max - pidtune_ranges.wc_factor_min) + pidtune_ranges.wc_factor_min;
-        wc = wc_factor / Tsum;
-        wc = min(max(wc, wc_min), wc_max);
+        wc = min(max(wc_factor / Tsum, wc_min), wc_max);
 
-        % Sample other parameters
         phase_margin = rand() * (pidtune_ranges.phase_margin_max - pidtune_ranges.phase_margin_min) + pidtune_ranges.phase_margin_min;
         focus_options = pidtune_ranges.design_focus;
         design_focus = focus_options{randi(numel(focus_options))};
 
-        % === FIXED: Use pidtune with pidtuneOptions for advanced parameters ===
         try
-            % Try using pidtuneOptions if available (newer MATLAB versions)
             opts = pidtuneOptions('CrossoverFrequency', wc, 'PhaseMargin', phase_margin);
             [C, info] = pidtune(G, 'PID', opts);
         catch
-            % Fallback to basic pidtune with just crossover frequency
             try
                 [C, info] = pidtune(G, 'PID', wc);
             catch
-                % Ultimate fallback - use pidtune with default settings
                 [C, info] = pidtune(G, 'PID');
-                % Store the actual crossover frequency used
                 if isfield(info, 'CrossoverFrequency')
                     wc = info.CrossoverFrequency;
                 end
             end
         end
 
-        % === 4. Validate PID ===
         Kp = C.Kp; Ki = C.Ki; Kd = C.Kd;
         if any(isnan([Kp, Ki, Kd])) || Kp <= 0 || Ki <= 0
             continue;
         end
 
-        % === 5. Simulate Step Response ===
+        % === 4. Closed-Loop Stability Check ===
         sys_cl = feedback(C * G, 1);
-        
-        % Check if closed-loop system is stable
         if ~isstable(sys_cl)
             continue;
         end
-        
+
         t = linspace(0, T_final, 1000);
         [y, t] = step(sys_cl, t);
 
-        % === 6. Compute Metrics ===
+        % === 5. Compute Metrics ===
         try
             info_step = stepinfo(y, t);
             e = 1 - y;
             ISE = trapz(t, e.^2);
             SSE = abs(e(end));
 
-            % Handle cases where stepinfo might not compute all metrics
             if ~isfield(info_step, 'SettlingTime') || isnan(info_step.SettlingTime)
                 info_step.SettlingTime = T_final;
             end
@@ -129,32 +124,31 @@ for i = 1:num_samples
                 info_step.Overshoot = 0;
             end
 
-            % Reject unstable or poorly performing systems
             if info_step.SettlingTime > T_final || info_step.RiseTime > T_final || ISE > 1e5
                 continue;
             end
         catch
-            % If stepinfo fails, skip this sample
             continue;
         end
 
-        % === 7. Store Valid Sample ===
+        % === 6. Store Valid Sample ===
         results{row,1}  = K;
         results{row,2}  = T1;
         results{row,3}  = T2;
-        results{row,4}  = Kp;
-        results{row,5}  = Ki;
-        results{row,6}  = Kd;
-        results{row,7}  = ISE;
-        results{row,8}  = SSE;
-        results{row,9}  = info_step.RiseTime;
-        results{row,10} = info_step.SettlingTime;
-        results{row,11} = info_step.Overshoot;
-        results{row,12} = system_type;
-        results{row,13} = type_label;
-        results{row,14} = wc;
-        results{row,15} = phase_margin;
-        results{row,16} = design_focus;
+        results{row,4}  = L;
+        results{row,5}  = Kp;
+        results{row,6}  = Ki;
+        results{row,7}  = Kd;
+        results{row,8}  = ISE;
+        results{row,9}  = SSE;
+        results{row,10} = info_step.RiseTime;
+        results{row,11} = info_step.SettlingTime;
+        results{row,12} = info_step.Overshoot;
+        results{row,13} = system_type;
+        results{row,14} = type_label;
+        results{row,15} = wc;
+        results{row,16} = phase_margin;
+        results{row,17} = design_focus;
 
         all_t{row} = t;
         all_y{row} = y;
@@ -171,7 +165,6 @@ for i = 1:num_samples
         continue;
     end
 end
-
 fprintf('Generated %d valid samples out of %d attempts\n', row-1, num_samples);
 
 if isempty(results)
@@ -179,7 +172,7 @@ if isempty(results)
 end
 
 % === 8. Export Table ===
-headers = {'K','T1','T2','Kp','Ki','Kd','ISE','SSE','RiseTime','SettlingTime','Overshoot', ...
+headers = {'K','T1','T2','L','Kp','Ki','Kd','ISE','SSE','RiseTime','SettlingTime','Overshoot', ...
            'SystemType','SystemCategory','wc','PhaseMargin','DesignFocus'};
 T = cell2table(results, 'VariableNames', headers);
 writetable(T, 'pid_dataset_pidtune.csv');

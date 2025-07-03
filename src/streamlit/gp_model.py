@@ -3,7 +3,7 @@ import torch
 
 class DGPModel(gpytorch.models.ApproximateGP):
     def __init__(self, input_dim):
-        inducing_points = torch.randn(128, input_dim)
+        inducing_points = torch.randn(256, input_dim)
         variational_distribution = gpytorch.variational.MeanFieldVariationalDistribution(inducing_points.size(0))
         variational_strategy = gpytorch.variational.VariationalStrategy(
             self, inducing_points, variational_distribution, learn_inducing_locations=True

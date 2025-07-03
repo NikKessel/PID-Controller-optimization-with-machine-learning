@@ -1,6 +1,6 @@
 % === Configuration ===
-num_samples = 100;           % Total number of systems
-T_final = max(100, 10 * (T1 + T2 + 1e-3)); % Simulation time
+num_samples = 1000;           % Total number of systems
+T_final = max(300); % Simulation time
 results = {};                % Store metrics
 all_t = {}; all_y = {};      % Store responses
 row = 1;
@@ -8,12 +8,11 @@ row = 1;
 % === System Type Definitions ===
 system_definitions = {
     % Label           Kmin  Kmax   T1min  T1max   T2min  T2max
-    "VeryLowGain",     0.01,  0.1,   10.0,  100.0,    10.0,   100.0;   % Thermal/biochemical
-    "LowGain",         0.1,   1.0,    3.0,   50.0,    1.0,   50.0;   % Tank/flow/HVAC
-    "MediumGain",      1.0,   5.0,    1.0,   20.0,    1.0,   20.0;   % General process
-    "HighGain",        5.0,  20.0,    0.2,    5.0,    0.2,    5.0;   % Drive/servo
-    "VeryHighGain",   20.0, 100.0,    0.01,   2.0,    0.01,   2.;   % Scaled fast loops
-
+    "VeryLowGain",     0.5,  2.8,   1.0, 50.0,    1.0, 50.0;   % Thermal/biochemical (very slow)
+    "LowGain",         0.9,  4.2,   1.0, 30.0,    1.0, 30.0;   % Tank/flow/HVAC (slow)
+    "MediumGain",      0.8,  4.0,    6.0, 20.0,     6.0, 20.0;   % General process (moderate)
+    "HighGain",        1.5,  4.0,    2.0, 10.0,     2.0, 10.0;   % Mechanical/servo loops (fast)
+    "VeryHighGain",    2.5,  6.0,    0.5,  3.0,     0.5,  3.0;   % Scaled fast loops (servo/electric)
 
 };
 
@@ -22,10 +21,10 @@ num_types = size(system_definitions, 1);
 
 % === PIDTUNE VARIATION RANGES ===
 pidtune_ranges = struct( ...
-    'wc_factor_min',     0.1, ...
-    'wc_factor_max',     15.0, ...
-    'phase_margin_min',  15, ...
-    'phase_margin_max',  60, ...
+    'wc_factor_min',     1, ...
+    'wc_factor_max',     5.0, ...
+    'phase_margin_min',  40, ...
+    'phase_margin_max',  80, ...
     'design_focus',      {{'reference-tracking', 'balanced', 'disturbance-rejection'}} ...
 );
 
@@ -62,8 +61,8 @@ for i = 1:num_samples
         % === 3. PID Tuning with variation ===
         % Compute Tsum and clamp wc range
         Tsum = T1 + T2 + 1e-3;
-        wc_min = 0.01;
-        wc_max = 10;
+        wc_min = 1.01;
+        wc_max = 15;
 
         % Sample wc
         wc_factor = rand() * (pidtune_ranges.wc_factor_max - pidtune_ranges.wc_factor_min) + pidtune_ranges.wc_factor_min;
