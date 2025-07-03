@@ -217,9 +217,34 @@ if mode == "🔍 Predict PID":
 
                 #param = param[0].upper() + param[1:]  # Capitalize first letter: kp → Kp, ki → Ki, etc.
                 # Check if model files exist before loading
-                x_scaler_path = os.path.join(base_path, f"dgp_{param}_scaler_X.pkl")
-                y_scaler_path = os.path.join(base_path, f"dgp_{param}_scaler_y.pkl")
+
+                def find_existing_file(base_path, patterns):
+                    for pattern in patterns:
+                        path = os.path.join(base_path, pattern)
+                        if os.path.exists(path):
+                            return path
+                    return None
+
+                param_lower = param.lower()
+                param_cap = param.capitalize()
+
+                x_scaler_path = find_existing_file(base_path, [
+                    f"dgp_{param_lower}_scaler_X.pkl",
+                    f"dgp_{param_cap}_scaler_X.pkl"
+                ])
+
+                y_scaler_path = find_existing_file(base_path, [
+                    f"dgp_{param_lower}_scaler_y.pkl",
+                    f"dgp_{param_cap}_scaler_y.pkl"
+                ])
+
+                if not x_scaler_path or not y_scaler_path:
+                    raise FileNotFoundError("❌ Scaler file(s) not found")
+                #x_scaler_path = os.path.join(base_path, f"dgp_{param}_scaler_X.pkl")
+                #y_scaler_path = os.path.join(base_path, f"dgp_{param}_scaler_y.pkl")
                 
+
+
                 if not os.path.exists(x_scaler_path):
                     raise FileNotFoundError(f"X scaler not found at: {x_scaler_path}")
                 if not os.path.exists(y_scaler_path):
