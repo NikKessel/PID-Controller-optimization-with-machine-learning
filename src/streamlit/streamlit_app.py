@@ -201,19 +201,14 @@ if mode == "🔍 Predict PID":
                 base_path = os.path.join(os.path.dirname(__file__), "streamlit_models")
 
                 #base_path = os.path.abspath(base_path)  # resolve relative path
-                st.write("Current file path:", os.path.abspath(__file__))
-                st.write("Model folder:", base_path)
-                st.write("Files in model folder:", os.listdir(base_path))
+
 
                 # Method 2: Alternative - use path relative to the script file
                 # Uncomment this if Method 1 doesn't work
                 # base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "streamlit_models")
                 
                 # Method 3: For debugging - check if directory exists
-                print(f"Looking for models in: {base_path}")
-                print(f"Directory exists: {os.path.exists(base_path)}")
-                if os.path.exists(base_path):
-                    print(f"Files in directory: {os.listdir(base_path)}")
+
 
                 #param = param[0].upper() + param[1:]  # Capitalize first letter: kp → Kp, ki → Ki, etc.
                 # Check if model files exist before loading
