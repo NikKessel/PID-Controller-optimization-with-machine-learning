@@ -195,7 +195,7 @@ if mode == "🔍 Predict PID":
             X_raw = np.array([[K, T1, T2,Td]])
 
             def load_and_predict_dgp(param, X_raw, return_std=False, return_all=False):
-                base_path = os.path.join(os.path.dirname(__file__), "streamlit_models", "dgp")
+                base_path = os.path.join(os.path.dirname(__file__), "streamlit_models")
 
 
                 #model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
