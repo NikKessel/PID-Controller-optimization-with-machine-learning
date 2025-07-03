@@ -48,7 +48,18 @@ def optimize_pid_for_system(K, T1, T2, T_d, surrogate_model, weights, constraint
         return cost
 
     bounds = [(0.1, 10.0), (0.001, 1.0), (0.0, 10.0)]
-    result = differential_evolution(objective, bounds, seed=42)
+    #result = differential_evolution(objective, bounds, seed=42)
+    result = differential_evolution(
+    objective,
+    bounds,
+    seed=42,
+    maxiter=300,         # ← Main control: number of generations
+    popsize=25,          # ← Population size per generation
+    tol=0.01,            # ← Convergence tolerance
+    mutation=(0.5, 1),   # ← Mutation constant range
+    recombination=0.7,   # ← Crossover probability
+)
+
 
     best_Kp, best_Ki, best_Kd = result.x
     best_metrics = surrogate_model.predict(pd.DataFrame([{

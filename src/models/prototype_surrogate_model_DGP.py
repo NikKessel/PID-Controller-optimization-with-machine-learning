@@ -47,7 +47,7 @@ target_config = {
 
 # === Fixed DGP Components ===
 class ToyDeepGPHiddenLayer(gpytorch.models.ApproximateGP):
-    def __init__(self, input_dims, output_dims, num_inducing=32):
+    def __init__(self, input_dims, output_dims, num_inducing=128):
         # Create inducing points with correct input dimensionality
         inducing_points = torch.randn(num_inducing, input_dims)
         variational_distribution = gpytorch.variational.CholeskyVariationalDistribution(num_inducing)
@@ -55,7 +55,9 @@ class ToyDeepGPHiddenLayer(gpytorch.models.ApproximateGP):
             self, inducing_points, variational_distribution, learn_inducing_locations=True)
         super().__init__(variational_strategy)
         
-        self.mean_module = gpytorch.means.ZeroMean()
+        #self.mean_module = gpytorch.means.ZeroMean()
+        self.mean_module = gpytorch.means.ConstantMean()
+
         self.covar_module = gpytorch.kernels.ScaleKernel(
             gpytorch.kernels.RBFKernel(ard_num_dims=input_dims)
         )

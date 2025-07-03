@@ -695,6 +695,17 @@ elif mode == "📊 Evaluate PID":
     # === Sidebar: Model Selection ===
     model_choice = st.sidebar.selectbox("Surrogate Model", ["MLP", "DGP"])
 
+    # Proper t definition
+    t = np.linspace(0, 100, 1000)  # or whatever range is needed
+
+    t_start, t_end = st.sidebar.slider(
+    "Time Window [s]",
+    min_value=float(t[0]),
+    max_value=float(t[-1]),
+    value=(float(t[0]), float(t[-1])),
+    step=1.0
+)
+    
     # === User Inputs ===
     K = st.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=1.0)
     T1 = st.number_input("T1 (Time Constant in s)", min_value=1.0, max_value=50.0, value=20.0)
@@ -849,7 +860,7 @@ elif mode == "📊 Evaluate PID":
             C = P + I + D
             sys_cl = control.feedback(C * G, 1)
 
-            t = np.linspace(0, 1000, 20000)
+            t = np.linspace(0, 100, 2000)
             t, y = control.step_response(sys_cl, T=t)
 
             u = np.ones_like(t)
@@ -867,7 +878,7 @@ elif mode == "📊 Evaluate PID":
                 rise_time_true = np.nan
 
             try:
-                tolerance = 0.02 * final_val
+                tolerance = 0.05 * final_val
                 within_bounds = np.abs(y - final_val) <= tolerance
                 settling_time_true = t[-1]
                 for i in range(len(y)):
@@ -881,67 +892,129 @@ elif mode == "📊 Evaluate PID":
             st.markdown("### 📊 Performance: Surrogate vs Simulation")
 
             # Format predicted values depending on model choice
+            def format_metric(value, std=None):
+                if std is not None:
+                    return f"{value:.2f}".replace(".", ",") + " ± " + f"{std:.2f}".replace(".", ",")
+                else:
+                    return f"{value:.4f}".replace(".", ",")
+
             if model_choice == "DGP":
                 predicted_values = [
-                    f"{ise_pred:.2f} ± {ise_std:.2f}",
-                    f"{sse_pred:.5f}" if not np.isnan(sse_pred) else "—",
-                    f"{overshoot_pred:.2f} ± {overshoot_std:.2f}",
-                    f"{settling_time_pred:.2f} ± {settling_time_std:.2f}",
-                    f"{rise_time_pred:.2f} ± {rise_time_std:.2f}"
+                    format_metric(ise_pred, ise_std),
+                    f"{sse_pred:.5f}".replace(".", ",") if not np.isnan(sse_pred) else "—",
+                    format_metric(overshoot_pred, overshoot_std),
+                    format_metric(settling_time_pred, settling_time_std),
+                    format_metric(rise_time_pred, rise_time_std),
                 ]
-            else:  # MLP (no uncertainty)
+            else:
                 predicted_values = [
-                    f"{ise_pred:.4f}",
-                    f"{sse_pred:.5f}",
-                    f"{overshoot_pred:.2f}",
-                    f"{settling_time_pred:.2f}",
-                    f"{rise_time_pred:.2f}"
+                    f"{ise_pred:.4f}".replace(".", ","),
+                    f"{sse_pred:.5f}".replace(".", ","),
+                    f"{overshoot_pred:.2f}".replace(".", ","),
+                    f"{settling_time_pred:.2f}".replace(".", ","),
+                    f"{rise_time_pred:.2f}".replace(".", ","),
                 ]
 
             df_compare = pd.DataFrame({
                 "Metric": ["ISE", "SSE", "Overshoot [%]", "Settling Time [s]", "Rise Time [s]"],
                 "Predicted": predicted_values,
                 "Simulated": [
-                    f"{ise_true:.4f}", f"{sse_true:.5f}", f"{overshoot_true:.2f}",
-                    f"{settling_time_true:.2f}", f"{rise_time_true:.2f}"
+                    f"{ise_true:.4f}".replace(".", ","), 
+                    f"{sse_true:.5f}".replace(".", ","), 
+                    f"{overshoot_true:.2f}".replace(".", ","), 
+                    f"{settling_time_true:.2f}".replace(".", ","), 
+                    f"{rise_time_true:.2f}".replace(".", ",")
                 ]
             })
-            st.dataframe(df_compare)
+            
+            st.table(df_compare)
+            
+        
 
-            # === Plot Step Response ===
+            # === Define step input: constant 1 after t=0 ===
+            step_input = np.ones_like(t)
+
+            # === Step Response Plot ===
             st.markdown("#### 🧪 Closed-Loop Step Response")
-            fig, ax = plt.subplots(figsize=(7, 4))
-            ax.plot(t, y, label="Simulated Response", linewidth=2)
-            ax.plot(t, np.ones_like(t), "k--", label="Step Input", alpha=0.6)
-            ax.set_xlabel("Time [s]")
-            ax.set_ylabel("Output")
-            ax.set_title("Step Response of G(s) + PID")
-            ax.grid(True)
-            ax.legend()
-            st.pyplot(fig)
 
-            # === Plot Error Signal ===
+            fig_step = go.Figure()
+            fig_step.add_trace(go.Scatter(x=t, y=y, mode='lines', name='Simulated Response', line=dict(width=2)))
+            fig_step.add_trace(go.Scatter(
+                x=t, y=step_input,
+                mode='lines',
+                name='Step Input (0 → 1)',
+                line=dict(color='black', dash='dash'),
+                opacity=0.6
+            ))
+
+            fig_step.update_layout(
+                title="Step Response of G(s) + PID",
+                xaxis=dict(
+                    title="Time [s]",
+                    rangeslider=dict(visible=False),
+                            range=[t_start, t_end],
+
+                    rangeselector=dict(
+                        buttons=list([
+                            dict(count=10, label="10s", step="second", stepmode="backward"),
+                            dict(count=25, label="25s", step="second", stepmode="backward"),
+                            dict(count=50, label="50s", step="second", stepmode="backward"),
+                            dict(step="all")
+                        ])
+                    )
+                ),
+                yaxis=dict(
+                    title="Output",
+                    range=[0, max(1.2, np.max(y))]
+                ),
+                legend=dict(
+                    x=1, y=0, xanchor='right', yanchor='bottom',
+                    bgcolor='rgba(255,255,255,0.8)', bordercolor='black', borderwidth=1
+                ),
+                template='plotly_white'
+            )
+
+            st.plotly_chart(fig_step, use_container_width=True)
+
+
+            # === Error Curve Plot ===
             st.markdown("#### 📉 Error Curve $e(t)$")
-            fig2, ax2 = plt.subplots(figsize=(7, 3))
-            ax2.plot(t, e, label="Tracking Error", color='red')
-            ax2.set_xlabel("Time [s]")
-            ax2.set_ylabel("e(t)")
-            ax2.grid(True)
-            ax2.set_title("Error Signal Over Time")
-            st.pyplot(fig2)
 
+            fig_error = go.Figure()
+            fig_error.add_trace(go.Scatter(
+                x=t, y=e, mode='lines', name='Tracking Error', line=dict(color='red')
+            ))
+
+            fig_error.update_layout(
+                title="Error Signal Over Time",
+                xaxis=dict(
+                    title="Time [s]",
+                    rangeslider=dict(visible=False),
+                    rangeselector=dict(
+                        buttons=list([
+                            dict(count=10, label="10s", step="second", stepmode="backward"),
+                            dict(count=25, label="25s", step="second", stepmode="backward"),
+                            dict(count=50, label="50s", step="second", stepmode="backward"),
+                            dict(step="all")
+                        ])
+                    )
+                ),
+                yaxis=dict(title="e(t)"),
+                template='plotly_white'
+            )
+
+            st.plotly_chart(fig_error, use_container_width=True)
+
+            
+            
         except Exception as e:
             st.error(f"❌ Evaluation failed: {e}")
 
 
-
 elif mode == "⚙️ Optimize PID":
     st.info("Use ML-guided optimization to find best PID")
-
-    model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
-    model_path = os.path.join(model_dir, "model_surrogate.joblib")
-    surrogate_model = joblib.load(model_path)
-
+    
+    model_choice = st.sidebar.selectbox("Surrogate Model", ["MLP", "DGP"])
     st.markdown("#### Define Optimization Weights")
     w_ise = st.slider("ISE Weight", 0.0, 1.0, 0.5)
     w_os = st.slider("Overshoot Weight", 0.0, 1.0, 0.2)
@@ -963,6 +1036,122 @@ elif mode == "⚙️ Optimize PID":
     T1 = st.sidebar.number_input("T1", min_value=1.0, max_value=50.0, value=10.0)
     T2 = st.sidebar.number_input("T2", min_value=0.0, max_value=50.0, value=3.0)
     Td = st.sidebar.number_input("Td (Dead Time)", min_value=0.0, max_value=5.0, value=0.6)
+    def predict_dgp(param, log_transform=True):
+        base_path = os.path.join(os.path.dirname(__file__), "streamlit_models", "dgp")
+        scaler = joblib.load(os.path.join(base_path, f"{param}_scaler.pkl"))
+        model = SimpleDGPModel(input_dim=7, num_inducing=64)
+        likelihood = gpytorch.likelihoods.GaussianLikelihood()
+        model.load_state_dict(torch.load(os.path.join(base_path, f"{param}_model.pth")))
+        likelihood.load_state_dict(torch.load(os.path.join(base_path, f"{param}_likelihood.pth")))
+        model.eval()
+        likelihood.eval()
+
+        X_dgp = pd.DataFrame({
+            'K': [K], 'T1': [T1], 'T2': [T2],
+            'Td': [Td], 'Kp': [Kp], 'Ki': [Ki], 'Kd': [Kd]
+        })
+        X_scaled = scaler.transform(X_dgp)
+        X_tensor = torch.tensor(X_scaled, dtype=torch.float32)
+
+        with torch.no_grad(), gpytorch.settings.fast_pred_var():
+            pred_dist = likelihood(model(X_tensor))
+            mean = pred_dist.mean.item()
+            std = pred_dist.stddev.item()
+
+            if log_transform:
+                mean_exp = np.exp(mean)
+                std_exp = mean_exp * std
+                return mean_exp, std_exp
+            else:
+                return mean, std
+            
+    if model_choice == "MLP":
+                model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
+                model_path = os.path.join(model_dir, "model_surrogate_mlp.joblib")
+                surrogate_model = joblib.load(model_path)
+                #prediction = surrogate_model.predict(X_eval)
+                #ise_pred, sse_pred, rise_time_pred, settling_time_pred, overshoot_pred = prediction[0]
+
+    elif model_choice == "DGP":
+                import torch
+                import gpytorch
+                import joblib
+                from gp_model import DGPModel
+
+                class SimpleDGPModel(gpytorch.models.ApproximateGP):
+                    def __init__(self, input_dim, num_inducing=64):
+                        inducing_points = torch.randn(num_inducing, input_dim)
+                        variational_distribution = gpytorch.variational.CholeskyVariationalDistribution(num_inducing)
+                        variational_strategy = gpytorch.variational.VariationalStrategy(
+                            self, inducing_points, variational_distribution, learn_inducing_locations=True
+                        )
+                        super().__init__(variational_strategy)
+
+                        self.mean_module = gpytorch.means.ConstantMean()
+                        self.covar_module = gpytorch.kernels.ScaleKernel(
+                            gpytorch.kernels.RBFKernel(ard_num_dims=input_dim) +
+                            gpytorch.kernels.MaternKernel(nu=2.5, ard_num_dims=input_dim)
+                        )
+
+                    def forward(self, x):
+                        mean_x = self.mean_module(x)
+                        covar_x = self.covar_module(x)
+                        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+
+                    def predict_dgp(param, log_transform=True):
+                        base_path = os.path.join(os.path.dirname(__file__), "streamlit_models", "dgp")
+
+                        # === Load Scaler and Model ===
+                        scaler = joblib.load(os.path.join(base_path, f"{param}_scaler.pkl"))
+                        model = SimpleDGPModel(input_dim=7, num_inducing=64)
+                        likelihood = gpytorch.likelihoods.GaussianLikelihood()
+
+                        model.load_state_dict(torch.load(os.path.join(base_path, f"{param}_model.pth")))
+                        likelihood.load_state_dict(torch.load(os.path.join(base_path, f"{param}_likelihood.pth")))
+                        model.eval()
+                        likelihood.eval()
+
+                        # === Prepare Input ===
+                        X_dgp = pd.DataFrame({
+                            'K': [K], 'T1': [T1], 'T2': [T2],
+                            'Td': [Td],  # or use L if needed
+                            'Kp': [Kp], 'Ki': [Ki], 'Kd': [Kd]
+                        })
+                        X_scaled = scaler.transform(X_dgp)
+                        X_tensor = torch.tensor(X_scaled, dtype=torch.float32)
+
+                        # === Predict with GP ===
+                        with torch.no_grad(), gpytorch.settings.fast_pred_var():
+                            pred_dist = likelihood(model(X_tensor))
+                            mean = pred_dist.mean.item()
+                            std = pred_dist.stddev.item()
+
+                            if log_transform:
+                                mean_exp = np.exp(mean)
+                                std_exp = mean_exp * std  # ∂exp ≈ exp(x)*Δx
+                                return mean_exp, std_exp
+                            else:
+                                return mean, std
+
+
+                #ise_pred = predict_dgp("ISE_log", log_transform=True)
+                #rise_time_pred = predict_dgp("RiseTime_log", log_transform=True)
+                #settling_time_pred = predict_dgp("SettlingTime_log", log_transform=True)
+                #overshoot_pred = predict_dgp("Overshoot", log_transform=False)
+                #sse_pred = np.nan
+                
+                # === Predict DGP Surrogate Outputs with Uncertainty ===
+                #ise_pred, ise_std = predict_dgp("ISE_log", log_transform=True)
+                #rise_time_pred, rise_time_std = predict_dgp("RiseTime_log", log_transform=True)
+                #settling_time_pred, settling_time_std = predict_dgp("SettlingTime_log", log_transform=True)
+                #overshoot_pred, overshoot_std = predict_dgp("Overshoot", log_transform=False)
+                #sse_pred = np.nan
+            
+    #model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
+    #model_path = os.path.join(model_dir, "model_surrogate_mlp.joblib")
+    #surrogate_model = joblib.load(model_path)
+
+
 
     if st.button("⚙️ Run Optimization", key="optimize_button"):
 
@@ -991,13 +1180,65 @@ elif mode == "⚙️ Optimize PID":
             st.success("✅ Optimization complete!")
             st.markdown("#### Optimal PID Parameters")
             st.write(f"Kp = {Kp:.4f}, Ki = {Ki:.4f}, Kd = {Kd:.4f}")
+            
+            
+                        # === Simulate Closed-Loop with Optimal PID for true metrics ===
+            if T2 > 0:
+                G = control.tf([K], np.convolve([T1, 1], [T2, 1]))
+            else:
+                G = control.tf([K], [T1, 1])
 
-            st.markdown("#### Optimized Performance Metrics")
-            metrics_df = pd.DataFrame({
+            P = control.tf([Kp], [1])
+            I = control.tf([Ki], [1, 0])
+            D = control.tf([Kd, 0], [1])
+            C = P + I + D
+
+            if Td > 0:
+                num_d, den_d = control.pade(Td, 1)
+                G_delay = control.tf(num_d, den_d)
+                G = control.series(G_delay, G)
+
+            sys_cl = control.feedback(C * G, 1)
+            t_sim = np.linspace(0, max(2 * (T1 + T2 + Td), 100), 1000)
+            t_sim, y_sim = control.step_response(sys_cl, t_sim)
+
+            # === Recalculate actual performance metrics ===
+            u_sim = np.ones_like(t_sim)
+            e_sim = u_sim - y_sim
+            ise_sim = simpson(e_sim**2, t_sim)
+            sse_sim = abs(1.0 - y_sim[-1])
+            overshoot_sim = (np.max(y_sim) - 1.0) * 100
+
+            # Rise Time
+            try:
+                t_10 = t_sim[np.where(y_sim >= 0.1 * y_sim[-1])[0][0]]
+                t_90 = t_sim[np.where(y_sim >= 0.9 * y_sim[-1])[0][0]]
+                rise_time_sim = t_90 - t_10
+            except:
+                rise_time_sim = np.nan
+
+            # Settling Time (±5%)
+            tol = 0.05 * abs(y_sim[-1])
+            within_bounds = (y_sim >= 1.0 - tol) & (y_sim <= 1.0 + tol)
+            settling_time_sim = np.nan
+            for i in range(len(y_sim)):
+                if np.all(within_bounds[i:]):
+                    settling_time_sim = t_sim[i]
+                    break
+
+            st.markdown("#### 📊 Performance Comparison: Surrogate vs Simulation")
+
+            combined_df = pd.DataFrame({
                 "Metric": ["ISE", "Overshoot (%)", "Settling Time (s)", "Rise Time (s)", "SSE"],
-                "Value": [ise, os, stime, rtime, sse]
+                "Optimized (Predicted)": [ise, os, stime, rtime, sse],
+                "Simulated (True)": [ise_sim, overshoot_sim, settling_time_sim, rise_time_sim, sse_sim]
             })
-            st.table(metrics_df)
+
+            st.table(combined_df.style.format({
+                "Optimized (Predicted)": "{:.2f}",
+                "Simulated (True)": "{:.2f}"
+            }))
+
 
             st.markdown("#### 🏆 Top 5 PID Controllers")
             st.dataframe(top5_df.style.format({
