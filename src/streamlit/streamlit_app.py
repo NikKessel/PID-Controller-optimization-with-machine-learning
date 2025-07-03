@@ -195,13 +195,14 @@ if mode == "🔍 Predict PID":
             X_raw = np.array([[K, T1, T2,Td]])
 
             def load_and_predict_dgp(param, X_raw, return_std=False, return_all=False):
+                base_path = os.path.join(os.path.dirname(__file__), "streamlit_models", "dgp")
 
 
-                model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
+                #model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
 
                 # === Load scalers
-                X_scaler = joblib.load(os.path.join(model_dir, f"dgp_{param}_scaler_X.pkl"))
-                y_scaler = joblib.load(os.path.join(model_dir, f"dgp_{param}_scaler_y.pkl"))
+                X_scaler = joblib.load(os.path.join(base_path, f"dgp_{param}_scaler_X.pkl"))
+                y_scaler = joblib.load(os.path.join(base_path, f"dgp_{param}_scaler_y.pkl"))
 
                 # === Preprocess input
                 X_scaled = X_scaler.transform(X_raw)
