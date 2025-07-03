@@ -195,16 +195,37 @@ if mode == "🔍 Predict PID":
             X_raw = np.array([[K, T1, T2,Td]])
 
             def load_and_predict_dgp(param, X_raw, return_std=False, return_all=False):
-                base_path = os.path.join(os.path.dirname(__file__), "streamlit_models")
+                #base_path = os.path.join(os.path.dirname(__file__), "streamlit_models")
 
-
-                model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
+                base_path = os.path.join(os.getcwd(), "streamlit_models")
+                
+                # Method 2: Alternative - use path relative to the script file
+                # Uncomment this if Method 1 doesn't work
+                # base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "streamlit_models")
+                
+                # Method 3: For debugging - check if directory exists
+                print(f"Looking for models in: {base_path}")
+                print(f"Directory exists: {os.path.exists(base_path)}")
+                if os.path.exists(base_path):
+                    print(f"Files in directory: {os.listdir(base_path)}")
+                
+                # Check if model files exist before loading
+                x_scaler_path = os.path.join(base_path, f"dgp_{param}_scaler_X.pkl")
+                y_scaler_path = os.path.join(base_path, f"dgp_{param}_scaler_y.pkl")
+                
+                if not os.path.exists(x_scaler_path):
+                    raise FileNotFoundError(f"X scaler not found at: {x_scaler_path}")
+                if not os.path.exists(y_scaler_path):
+                    raise FileNotFoundError(f"Y scaler not found at: {y_scaler_path}")
+                X_scaler = joblib.load(x_scaler_path)
+                y_scaler = joblib.load(y_scaler_path)
+                #model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
 
                 # === Load scalers
                 #X_scaler = joblib.load(os.path.join(base_path, f"dgp_{param}_scaler_X.pkl"))
                 #y_scaler = joblib.load(os.path.join(base_path, f"dgp_{param}_scaler_y.pkl"))
-                X_scaler = joblib.load(os.path.join(model_dir, f"dgp_{param}_scaler_X.pkl"))
-                y_scaler = joblib.load(os.path.join(model_dir, f"dgp_{param}_scaler_y.pkl"))
+                #X_scaler = joblib.load(os.path.join(model_dir, f"dgp_{param}_scaler_X.pkl"))
+                #y_scaler = joblib.load(os.path.join(model_dir, f"dgp_{param}_scaler_y.pkl"))
                 # === Preprocess input
                 X_scaled = X_scaler.transform(X_raw)
                 X_tensor = torch.tensor(X_scaled, dtype=torch.float32)
