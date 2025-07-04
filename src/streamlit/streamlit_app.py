@@ -38,6 +38,7 @@ mode = st.sidebar.radio("Choose Mode", [
 # === Landing Page ===
 if mode == "🏠 Home":
     st.title("📘 Machine Learning for Performance-Driven Tuning of PID Controllers in Process Control Applications")
+    st.sidebar.success(f"Loaded Groq API key: {st.secrets['GROQ_API_KEY'][:5]}...✅")
 
     st.markdown("""
     ## 🎓 Project Overview
