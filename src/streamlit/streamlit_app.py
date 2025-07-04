@@ -1680,35 +1680,46 @@ if "floating_chat_history" not in st.session_state:
     "Respond in a structured, professional tone. Use Markdown for equations or formatting when helpful."}
     ]
 
+# === Initialize Chat History (Session State) ===
+if "floating_chat_history" not in st.session_state:
+    st.session_state.floating_chat_history = [
+        {"role": "system", "content": (
+            "You are a professional AI assistant specialized in control theory and machine learning. "
+            "Answer briefly and clearly, suitable for academic and engineering use. "
+            "The user is working on a bachelor's thesis about 'Machine Learning-Based Optimization of PID Controller Parameters'. "
+            "Explain concepts like ISE, surrogate modeling, and PID tuning in a concise, academic tone."
+        )}
+    ]
+
 # === Floating Chat UI Block ===
 with st.container(border=True):
     st.markdown("### 🤖 Ask the AI Assistant")
     st.caption("Ask about PID control, optimization, surrogate models, etc.")
 
-    # === Chat history output box ===
+    # === Display Chat History (skip system prompt) ===
     if len(st.session_state.floating_chat_history) > 1:
         for msg in st.session_state.floating_chat_history[1:]:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-    # === Input box and send button ===
+    # === Input box and form ===
     with st.form("chat_input_form", clear_on_submit=True):
         user_input = st.text_input("Your question:", placeholder="E.g., What does ISE mean?")
         submitted = st.form_submit_button("Send")
 
-    # === Handle submission
-    if submitted and user_input:
-        st.session_state.floating_chat_history.append({"role": "user", "content": user_input})
+        # ✅ Handle submit within form block to avoid double-click issues
+        if submitted and user_input:
+            st.session_state.floating_chat_history.append({"role": "user", "content": user_input})
 
-        with st.spinner("💬 Thinking..."):
-            client = OpenAI(
-                api_key=st.secrets["GROQ_API_KEY"],
-                base_url="https://api.groq.com/openai/v1"
-            )
-            response = client.chat.completions.create(
-                model="llama3-8b-8192",
-                messages=st.session_state.floating_chat_history,
-                temperature=0.7
-            )
-            reply = response.choices[0].message.content
-            st.session_state.floating_chat_history.append({"role": "assistant", "content": reply})
+            with st.spinner("💬 Thinking..."):
+                client = OpenAI(
+                    api_key=st.secrets["GROQ_API_KEY"],
+                    base_url="https://api.groq.com/openai/v1"
+                )
+                response = client.chat.completions.create(
+                    model="llama3-8b-8192",
+                    messages=st.session_state.floating_chat_history,
+                    temperature=0.5  # Lower temp for concise, stable answers
+                )
+                reply = response.choices[0].message.content.strip()
+                st.session_state.floating_chat_history.append({"role": "assistant", "content": reply})
