@@ -1692,37 +1692,52 @@ if "floating_chat_history" not in st.session_state:
     ]
 
 # === Floating Chat UI Block ===
+# === Ask the AI Assistant UI ===
 with st.container(border=True):
     st.markdown("### 🤖 Ask the AI Assistant")
     st.caption("Ask about PID control, optimization, surrogate models, etc.")
 
-    # === Display Chat History (skip system prompt) ===
+    # Show previous messages
     if len(st.session_state.floating_chat_history) > 1:
         for msg in st.session_state.floating_chat_history[1:]:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-    with st.form("chat_input_form", clear_on_submit=True):
-        input_placeholder = st.empty()
-        temp_input = input_placeholder.text_input("Your question:", placeholder="E.g., What does ISE mean?")
+    # Store last input across reruns
+    if "last_user_input" not in st.session_state:
+        st.session_state.last_user_input = ""
+
+    # === Input form
+    with st.form("chat_input_form"):
+        user_input = st.text_input("Your question:", value=st.session_state.last_user_input, key="chat_input")
         submitted = st.form_submit_button("Send")
 
-    # ✅ Capture input before it's lost
-    if submitted and temp_input.strip():
-        user_input = temp_input.strip()
-        st.session_state.floating_chat_history.append({"role": "user", "content": user_input})
+    # Store input BEFORE rerun clears it
+    if submitted:
+        st.session_state.last_user_input = user_input.strip()
+        st.session_state.chat_submitted = True
 
-        with st.spinner("💬 Thinking..."):
-            client = OpenAI(
-                api_key=st.secrets["GROQ_API_KEY"],
-                base_url="https://api.groq.com/openai/v1"
-            )
-            response = client.chat.completions.create(
-                model="llama3-8b-8192",
-                messages=st.session_state.floating_chat_history,
-                temperature=0.5
-            )
-            reply = response.choices[0].message.content.strip()
-            st.session_state.floating_chat_history.append({"role": "assistant", "content": reply})
+# === Respond outside form logic ===
+if st.session_state.get("chat_submitted", False) and st.session_state.last_user_input:
+    question = st.session_state.last_user_input
+    st.session_state.floating_chat_history.append({"role": "user", "content": question})
+
+    with st.spinner("💬 Thinking..."):
+        client = OpenAI(
+            api_key=st.secrets["GROQ_API_KEY"],
+            base_url="https://api.groq.com/openai/v1"
+        )
+        response = client.chat.completions.create(
+            model="llama3-8b-8192",
+            messages=st.session_state.floating_chat_history,
+            temperature=0.5
+        )
+        reply = response.choices[0].message.content.strip()
+        st.session_state.floating_chat_history.append({"role": "assistant", "content": reply})
+
+    # Reset flags to avoid double call
+    st.session_state.chat_submitted = False
+    st.session_state.last_user_input = ""
+
 
 
