@@ -15,14 +15,17 @@ import plotly.graph_objects as go
 import torch
 import gpytorch
 from gpytorch.settings import fast_pred_var
-
+import openai
 
 # Set page config###
 #test
 # === Page Config ===
 st.set_page_config(page_title="PID Optimizer", layout="wide", initial_sidebar_state="expanded")
 
-
+# === Configure Groq API ===
+openai.api_key = st.secrets["GROQ_API_KEY"]
+openai.api_base = "https://api.groq.com/openai/v1"
+model_name = "llama3-8b-8192"  # or "gemma-7b-it"
 
 
 # === Sidebar Navigation ===
@@ -38,7 +41,7 @@ mode = st.sidebar.radio("Choose Mode", [
 # === Landing Page ===
 if mode == "🏠 Home":
     st.title("📘 Machine Learning for Performance-Driven Tuning of PID Controllers in Process Control Applications")
-    st.sidebar.success(f"Loaded Groq API key: {st.secrets['GROQ_API_KEY'][:5]}...✅")
+    #st.sidebar.success(f"Loaded Groq API key: {st.secrets['GROQ_API_KEY'][:5]}...✅")
 
     st.markdown("""
     ## 🎓 Project Overview
@@ -1607,3 +1610,42 @@ elif mode == "🧪 Simulink Validation":
 
             except Exception as e:
                 st.error(f"❌ Simulation failed:\n{e}")
+
+
+# === Sidebar Chat Assistant ===
+st.sidebar.title("🧠 AI Assistant")
+st.sidebar.caption("Ask about PID, optimization, or control systems.")
+
+# === Initialize chat history
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = [
+        {
+            "role": "system",
+            "content": (
+                "You are a helpful teaching assistant for control engineering. "
+                "Explain PID tuning, surrogate models like DGP, optimization methods (e.g., GA), "
+                "and performance metrics such as ISE, SSE, Overshoot, Rise Time. "
+                "Keep answers concise and technically clear for an engineering student."
+            )
+        }
+    ]
+# === Get user input from sidebar
+user_input = st.sidebar.chat_input("Ask a question...")
+
+if user_input:
+    st.session_state.chat_history.append({"role": "user", "content": user_input})
+
+    with st.sidebar:
+        with st.spinner("💬 Thinking..."):
+            response = openai.ChatCompletion.create(
+                model=model_name,
+                messages=st.session_state.chat_history
+            )
+            reply = response.choices[0].message.content
+            st.session_state.chat_history.append({"role": "assistant", "content": reply})
+            
+# === Display messages in sidebar
+with st.sidebar:
+    for msg in st.session_state.chat_history[1:]:  # skip system prompt
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
