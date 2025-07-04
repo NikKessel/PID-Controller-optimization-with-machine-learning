@@ -1652,7 +1652,7 @@ floating_chat_html = """
 }
 </style>
 
-<button id="floatingChatBtn" onclick="toggleChat()">\ud83d\udcac Ask AI</button>
+<button id="floatingChatBtn" onclick="toggleChat()">💬 Ask AI</button>
 <div id="floatingChatBox">
     <p><b>\ud83e\udd16 AI Assistant</b></p>
     <div id="chatHistory">You can ask about PID tuning, optimization, etc.</div>
