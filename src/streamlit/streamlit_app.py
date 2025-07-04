@@ -1702,13 +1702,14 @@ with st.container(border=True):
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-    # === Input box and form ===
-    with st.form("chat_input_form", clear_on_submit=True):
-        user_input = st.text_input("Your question:", placeholder="E.g., What does ISE mean?")
-        submitted = st.form_submit_button("Send")
+        with st.form("chat_input_form", clear_on_submit=True):
+            input_placeholder = st.empty()
+            temp_input = input_placeholder.text_input("Your question:", placeholder="E.g., What does ISE mean?")
+            submitted = st.form_submit_button("Send")
 
-        # ✅ Handle submit within form block to avoid double-click issues
-        if submitted and user_input:
+        # ✅ Capture input before it's lost
+        if submitted and temp_input.strip():
+            user_input = temp_input.strip()
             st.session_state.floating_chat_history.append({"role": "user", "content": user_input})
 
             with st.spinner("💬 Thinking..."):
@@ -1719,7 +1720,8 @@ with st.container(border=True):
                 response = client.chat.completions.create(
                     model="llama3-8b-8192",
                     messages=st.session_state.floating_chat_history,
-                    temperature=0.5  # Lower temp for concise, stable answers
+                    temperature=0.5
                 )
                 reply = response.choices[0].message.content.strip()
                 st.session_state.floating_chat_history.append({"role": "assistant", "content": reply})
+
