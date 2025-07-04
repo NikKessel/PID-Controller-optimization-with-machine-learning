@@ -1702,26 +1702,27 @@ with st.container(border=True):
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-        with st.form("chat_input_form", clear_on_submit=True):
-            input_placeholder = st.empty()
-            temp_input = input_placeholder.text_input("Your question:", placeholder="E.g., What does ISE mean?")
-            submitted = st.form_submit_button("Send")
+    with st.form("chat_input_form", clear_on_submit=True):
+        input_placeholder = st.empty()
+        temp_input = input_placeholder.text_input("Your question:", placeholder="E.g., What does ISE mean?")
+        submitted = st.form_submit_button("Send")
 
-        # ✅ Capture input before it's lost
-        if submitted and temp_input.strip():
-            user_input = temp_input.strip()
-            st.session_state.floating_chat_history.append({"role": "user", "content": user_input})
+    # ✅ Capture input before it's lost
+    if submitted and temp_input.strip():
+        user_input = temp_input.strip()
+        st.session_state.floating_chat_history.append({"role": "user", "content": user_input})
 
-            with st.spinner("💬 Thinking..."):
-                client = OpenAI(
-                    api_key=st.secrets["GROQ_API_KEY"],
-                    base_url="https://api.groq.com/openai/v1"
-                )
-                response = client.chat.completions.create(
-                    model="llama3-8b-8192",
-                    messages=st.session_state.floating_chat_history,
-                    temperature=0.5
-                )
-                reply = response.choices[0].message.content.strip()
-                st.session_state.floating_chat_history.append({"role": "assistant", "content": reply})
+        with st.spinner("💬 Thinking..."):
+            client = OpenAI(
+                api_key=st.secrets["GROQ_API_KEY"],
+                base_url="https://api.groq.com/openai/v1"
+            )
+            response = client.chat.completions.create(
+                model="llama3-8b-8192",
+                messages=st.session_state.floating_chat_history,
+                temperature=0.5
+            )
+            reply = response.choices[0].message.content.strip()
+            st.session_state.floating_chat_history.append({"role": "assistant", "content": reply})
+
 
