@@ -1615,44 +1615,43 @@ client = OpenAI(
 
 model_name = "llama3-8b-8192"
 
-# === Sidebar Chat Assistant ===
-st.sidebar.title("🧠 AI Assistant")
-st.sidebar.caption("Ask about PID, optimization, or control systems.")
 
-# === Initialize chat history
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = [
-        {
-            "role": "system",
-            "content": (
-                "You are a helpful teaching assistant for control engineering. "
-                "Explain PID tuning, surrogate models like DGP, optimization methods (e.g., GA), "
-                "and performance metrics such as ISE, SSE, Overshoot, Rise Time. "
-                "Keep answers concise and technically clear for an engineering student."
-            )
-        }
+# === Session state for floating chat ===
+if "floating_chat_history" not in st.session_state:
+    st.session_state.floating_chat_history = [
+        {"role": "system", "content": "You are a helpful assistant for PID tuning and ML optimization."}
     ]
+if "floating_chat_open" not in st.session_state:
+    st.session_state.floating_chat_open = False
 
-# === Get user input from sidebar
-user_input = st.sidebar.chat_input("Ask a question...")
+# === Chat UI button (bottom-right toggle) ===
+with st.container():
+    chat_toggle = st.button("💬 Open Chat", key="open_chat_button", help="Toggle AI assistant", use_container_width=True)
 
-if user_input:
-    st.session_state.chat_history.append({"role": "user", "content": user_input})
-    with st.sidebar:
-        with st.spinner("💬 Thinking..."):
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=st.session_state.chat_history,
-                temperature=0.7,
-            )
-            reply = response.choices[0].message.content
-            st.session_state.chat_history.append({"role": "assistant", "content": reply})
+if chat_toggle:
+    st.session_state.floating_chat_open = not st.session_state.floating_chat_open
 
-# === Display messages in sidebar
-with st.sidebar:
-    for msg in st.session_state.chat_history[1:]:  # skip system prompt
+# === Floating chat container (if open) ===
+if st.session_state.floating_chat_open:
+    with st.chat_message("assistant", avatar="🤖"):
+        st.markdown("Ask anything about PID, ML, optimization, metrics...")
+
+    for msg in st.session_state.floating_chat_history[1:]:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
+
+    user_input_float = st.chat_input("Type your question...", key="floating_input")
+
+    if user_input_float:
+        st.session_state.floating_chat_history.append({"role": "user", "content": user_input_float})
+        with st.spinner("Thinking..."):
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=st.session_state.floating_chat_history,
+                temperature=0.7
+            )
+            reply = response.choices[0].message.content
+        st.session_state.floating_chat_history.append({"role": "assistant", "content": reply})
 
 # === Optional: Floating Expandable Chat UI (Bottom-Right) ===
 floating_chat_ui = """
