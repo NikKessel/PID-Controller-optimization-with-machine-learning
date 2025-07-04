@@ -1605,7 +1605,7 @@ elif mode == "🧪 Simulink Validation":
             except Exception as e:
                 st.error(f"❌ Simulation failed:\n{e}")
 
-                
+
 
 # === Initialize Groq API client ===
 client = OpenAI(
@@ -1653,3 +1653,51 @@ with st.sidebar:
     for msg in st.session_state.chat_history[1:]:  # skip system prompt
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
+
+# === Optional: Floating Expandable Chat UI (Bottom-Right) ===
+floating_chat_ui = """
+<style>
+#chatButton {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: #5e81ac;
+    color: white;
+    padding: 10px 15px;
+    border-radius: 25px;
+    cursor: pointer;
+    z-index: 9999;
+    font-size: 16px;
+}
+#chatBox {
+    display: none;
+    position: fixed;
+    bottom: 70px;
+    right: 20px;
+    width: 320px;
+    height: 400px;
+    background-color: #1e293b;
+    color: white;
+    padding: 15px;
+    border-radius: 10px;
+    overflow-y: auto;
+    z-index: 9998;
+    font-size: 14px;
+}
+</style>
+
+<div id="chatButton" onclick="toggleChat()">💬 Ask AI</div>
+<div id="chatBox">
+    <b>AI Assistant</b><br><br>
+    <i>This is a floating placeholder.</i><br>
+    <i>Type questions in the sidebar 🧠</i>
+</div>
+
+<script>
+function toggleChat() {
+    var chatBox = document.getElementById("chatBox");
+    chatBox.style.display = (chatBox.style.display === "none") ? "block" : "none";
+}
+</script>
+"""
+st.markdown(floating_chat_ui, unsafe_allow_html=True)
