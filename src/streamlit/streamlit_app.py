@@ -1607,96 +1607,82 @@ elif mode == "🧪 Simulink Validation":
 
 
 
-# === Initialize Groq API client ===
+# === Groq API setup ===
 client = OpenAI(
-    api_key=st.secrets["GROQ_API_KEY"],
+    api_key=st.secrets["groq_api_key"],
     base_url="https://api.groq.com/openai/v1"
 )
-
 model_name = "llama3-8b-8192"
 
-
-# === Session state for floating chat ===
+# === Session State ===
 if "floating_chat_history" not in st.session_state:
     st.session_state.floating_chat_history = [
         {"role": "system", "content": "You are a helpful assistant for PID tuning and ML optimization."}
     ]
-if "floating_chat_open" not in st.session_state:
-    st.session_state.floating_chat_open = False
 
-# === Chat UI button (bottom-right toggle) ===
-with st.container():
-    chat_toggle = st.button("💬 Open Chat", key="open_chat_button", help="Toggle AI assistant", use_container_width=True)
-
-if chat_toggle:
-    st.session_state.floating_chat_open = not st.session_state.floating_chat_open
-
-# === Floating chat container (if open) ===
-if st.session_state.floating_chat_open:
-    with st.chat_message("assistant", avatar="🤖"):
-        st.markdown("Ask anything about PID, ML, optimization, metrics...")
-
-    for msg in st.session_state.floating_chat_history[1:]:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
-    user_input_float = st.chat_input("Type your question...", key="floating_input")
-
-    if user_input_float:
-        st.session_state.floating_chat_history.append({"role": "user", "content": user_input_float})
-        with st.spinner("Thinking..."):
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=st.session_state.floating_chat_history,
-                temperature=0.7
-            )
-            reply = response.choices[0].message.content
-        st.session_state.floating_chat_history.append({"role": "assistant", "content": reply})
-
-# === Optional: Floating Expandable Chat UI (Bottom-Right) ===
-floating_chat_ui = """
+# === Floating Chat Button and Box HTML/CSS ===
+floating_chat_html = """
 <style>
-#chatButton {
+#floatingChatBtn {
     position: fixed;
     bottom: 20px;
     right: 20px;
     background-color: #5e81ac;
     color: white;
-    padding: 10px 15px;
-    border-radius: 25px;
-    cursor: pointer;
-    z-index: 9999;
+    border: none;
+    padding: 12px 16px;
+    border-radius: 20px;
     font-size: 16px;
+    z-index: 10000;
+    cursor: pointer;
 }
-#chatBox {
+#floatingChatBox {
     display: none;
     position: fixed;
     bottom: 70px;
     right: 20px;
-    width: 320px;
-    height: 400px;
+    width: 340px;
+    max-height: 480px;
     background-color: #1e293b;
     color: white;
-    padding: 15px;
     border-radius: 10px;
+    padding: 15px;
     overflow-y: auto;
-    z-index: 9998;
-    font-size: 14px;
+    z-index: 9999;
 }
 </style>
 
-<div id="chatButton" onclick="toggleChat()">💬 Ask AI</div>
-<div id="chatBox">
-    <b>AI Assistant</b><br><br>
-    <i>This is a floating placeholder.</i><br>
-    <i>Type questions in the sidebar 🧠</i>
+<button id="floatingChatBtn" onclick="toggleChat()">\ud83d\udcac Ask AI</button>
+<div id="floatingChatBox">
+    <p><b>\ud83e\udd16 AI Assistant</b></p>
+    <div id="chatHistory">You can ask about PID tuning, optimization, etc.</div>
 </div>
 
 <script>
 function toggleChat() {
-    var chatBox = document.getElementById("chatBox");
+    var chatBox = document.getElementById("floatingChatBox");
     chatBox.style.display = (chatBox.style.display === "none") ? "block" : "none";
 }
 </script>
 """
-st.markdown(floating_chat_ui, unsafe_allow_html=True)
+st.markdown(floating_chat_html, unsafe_allow_html=True)
+
+# === Chat Input Form ===
+with st.empty():
+    with st.form(key="floating_chat_form", clear_on_submit=True):
+        user_input_float = st.text_input(" ", placeholder="Ask a question...", label_visibility="collapsed")
+        submit = st.form_submit_button("Send")
+
+# === Handle Input & Response ===
+if submit and user_input_float:
+    st.session_state.floating_chat_history.append({"role": "user", "content": user_input_float})
+
+    with st.spinner("\ud83e\udd16 Thinking..."):
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=st.session_state.floating_chat_history,
+            temperature=0.7
+        )
+        reply = response.choices[0].message.content
+
+    st.session_state.floating_chat_history.append({"role": "assistant", "content": reply})
