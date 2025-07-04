@@ -737,7 +737,19 @@ if mode == "🔍 Predict PID":
                 ax_u.grid(True)
                 ax_u.legend()
                 st.pyplot(fig_u)  # if using Streamlit' """
+            if st.session_state.get("predict_clicked", False):
+                # === Display metrics ===
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Kp", Kp_str)
+                col2.metric("Ki", Ki_str)
+                col3.metric("Kd", Kd_str)
 
+                # === Show plots ===
+                st.plotly_chart(fig, use_container_width=True)
+
+                # === Show table ===
+                st.markdown("### 📊 Key Performance Metrics")
+                st.table(df_metrics)
 
         except Exception as e:
             st.error(f"Prediction or simulation failed: {e}")
