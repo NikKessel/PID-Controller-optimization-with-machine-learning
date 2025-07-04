@@ -1654,17 +1654,22 @@ floating_chat_html = """
 
 <button id="floatingChatBtn" onclick="toggleChat()">💬 Ask AI</button>
 <div id="floatingChatBox">
-    <p><b>\ud83e\udd16 AI Assistant</b></p>
+    <p><strong>🤖 AI Assistant</strong></p>
     <div id="chatHistory">You can ask about PID tuning, optimization, etc.</div>
 </div>
 
 <script>
 function toggleChat() {
     var chatBox = document.getElementById("floatingChatBox");
-    chatBox.style.display = (chatBox.style.display === "none") ? "block" : "none";
+    if (chatBox.style.display === "none" || chatBox.style.display === "") {
+        chatBox.style.display = "block";
+    } else {
+        chatBox.style.display = "none";
+    }
 }
 </script>
 """
+
 st.markdown(floating_chat_html, unsafe_allow_html=True)
 
 # === Chat Input Form ===
