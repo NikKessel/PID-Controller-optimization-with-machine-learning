@@ -615,21 +615,6 @@ if mode == "🔍 Predict PID":
                 rise_time = np.nan
 
 
-            if st.session_state.get("predict_clicked", False):
-                # === Display metrics ===
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Kp", Kp_str)
-                col2.metric("Ki", Ki_str)
-                col3.metric("Kd", Kd_str)
-
-                # === Show plots ===
-                st.plotly_chart(fig, use_container_width=True)
-
-                # === Show table ===
-                st.markdown("### 📊 Key Performance Metrics")
-                st.table(df_metrics)
-
-                
             # Overshoot
             overshoot_val = (np.max(y_ml) - 1.0) * 100
             overshoot_time = t_ml[np.argmax(y_ml)] if np.max(y_ml) > 1 else np.nan
@@ -1689,7 +1674,10 @@ function toggleChat() {
 # === Chat Session State ===
 if "floating_chat_history" not in st.session_state:
     st.session_state.floating_chat_history = [
-        {"role": "system", "content": "You are a helpful assistant for PID tuning and ML optimization."}
+        {"role": "system", "content": "You are a professional assistant embedded in a Bachelor thesis tool for optimizing PID controller parameters using machine learning."
+    "Your answers should be concise, technically sound, and suitable for an academic or engineering audience (e.g., professors, recruiters). "
+    "Explain concepts from control theory and machine learning clearly and accurately. Focus on key topics like PID tuning, surrogate models, performance metrics (ISE, overshoot, settling time), and the benefits of data-driven methods over classical techniques like Ziegler-Nichols or CHR. "
+    "Respond in a structured, professional tone. Use Markdown for equations or formatting when helpful."}
     ]
 
 # === Floating Chat UI Block ===
