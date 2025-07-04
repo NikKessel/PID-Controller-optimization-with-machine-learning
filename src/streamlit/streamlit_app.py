@@ -1693,30 +1693,26 @@ if "floating_chat_history" not in st.session_state:
 
 # === Floating Chat UI Block ===
 # === Ask the AI Assistant UI ===
-# === Ask the AI Assistant UI ===
 with st.container(border=True):
     st.markdown("### 🤖 Ask the AI Assistant")
     st.caption("Ask about PID control, optimization, surrogate models, etc.")
-
-    # Show chat history
-    if "floating_chat_history" not in st.session_state:
-        st.session_state.floating_chat_history = [
-            {"role": "system", "content": "You are a professional assistant for ML-based PID optimization. Keep answers short, clear, and focused on control theory and ML for academic use."}
-        ]
-
+    
+    # Show previous messages
     if len(st.session_state.floating_chat_history) > 1:
         for msg in st.session_state.floating_chat_history[1:]:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
-
-    # Input field (no form)
-    col1, col2 = st.columns([4, 1])
-    user_input = col1.text_input("Your question:", key="chat_input", label_visibility="collapsed", placeholder="E.g., What is ISE?")
-    send_clicked = col2.button("Send")
-
-    # Handle input
-    if send_clicked and user_input.strip():
-        st.session_state.floating_chat_history.append({"role": "user", "content": user_input.strip()})
+    
+    # === Input form
+    with st.form("chat_input_form"):
+        user_input = st.text_input("Your question:", key="chat_input")
+        submitted = st.form_submit_button("Send")
+    
+    # === Process immediately when form is submitted ===
+    if submitted and user_input.strip():
+        question = user_input.strip()
+        st.session_state.floating_chat_history.append({"role": "user", "content": question})
+        
         with st.spinner("💬 Thinking..."):
             client = OpenAI(
                 api_key=st.secrets["GROQ_API_KEY"],
@@ -1729,6 +1725,6 @@ with st.container(border=True):
             )
             reply = response.choices[0].message.content.strip()
             st.session_state.floating_chat_history.append({"role": "assistant", "content": reply})
-
-        # Clear input after send
-        st.session_state.chat_input = ""
+        
+        # Force rerun to show the new messages
+        st.rerun()
