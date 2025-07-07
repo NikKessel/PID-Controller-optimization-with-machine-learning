@@ -118,10 +118,10 @@ def optimize_pid_for_system(K, T1, T2, T_d, model_choice, weights, constraints):
     def objective(params):
         try:
             Kp, Ki, Kd = params
-            print(f"🎯 Objective called with params: Kp={Kp}, Ki={Ki}, Kd={Kd}")
+            #print(f"🎯 Objective called with params: Kp={Kp}, Ki={Ki}, Kd={Kd}")
 
             predictions = predict_surrogate(Kp, Ki, Kd)
-            print(f"🔍 Raw predictions from surrogate: {predictions}")
+            #print(f"🔍 Raw predictions from surrogate: {predictions}")
 
             if predictions is None:
                 print("❌ predict_surrogate returned None")
@@ -138,8 +138,8 @@ def optimize_pid_for_system(K, T1, T2, T_d, model_choice, weights, constraints):
                     print(f"❌ DGP predictions not tuple of length 2: {predictions}")
                     return float('inf')
                 means, stds = predictions
-                print(f"📊 DGP means: {means}")
-                print(f"📊 DGP stds: {stds}")
+                #print(f"📊 DGP means: {means}")
+                #print(f"📊 DGP stds: {stds}")
 
             else:
                 print(f"❌ Invalid model_choice: {model_choice}")
