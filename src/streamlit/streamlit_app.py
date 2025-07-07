@@ -1670,11 +1670,19 @@ elif mode == "⚙️ Optimize PID":
 
             #for idx, (Kp_i, Ki_i, Kd_i) in enumerate(top_5_pid_params):
             #valid_rows = top5_df[top5_df[["Kp_val", "Ki_val", "Kd_val"]].notna().all(axis=1)]
+            st.markdown("### 🛠️ Debug: Raw Top 5 Controllers (before plotting)")
+            st.dataframe(top5_df[[
+                "Kp_val", "Ki_val", "Kd_val",
+                "Kp", "Ki", "Kd",
+                "ISE", "ISE_sim",
+                "Overshoot", "Overshoot_sim",
+                "SettlingTime", "SettlingTime_sim",
+                "RiseTime", "RiseTime_sim",
+                "SSE", "Cost"
+            ]])
             valid_rows = top5_df[
-                top5_df[["Kp_val", "Ki_val", "Kd_val"]]
-                .applymap(lambda x: np.isfinite(x) and not pd.isna(x))
-                .all(axis=1)
-            ]
+                ~top5_df[["Kp_val", "Ki_val", "Kd_val"]].isin(["nan ± nan"]).any(axis=1)
+            ].copy()
 
             if len(valid_rows) == 0:
                 st.warning("⚠️ No valid controllers available for plotting.")
