@@ -1664,12 +1664,12 @@ elif mode == "⚙️ Optimize PID":
             )
 
             # === Step Response Plot (Top 5 Controllers)
+            # === Step Response Plot (Top 5 Controllers)
             st.markdown("#### 🧪 Step Responses of Top 5 Controllers")
             fig_step5 = go.Figure()
             fig_error5 = go.Figure()
 
-            #for idx, (Kp_i, Ki_i, Kd_i) in enumerate(top_5_pid_params):
-            #valid_rows = top5_df[top5_df[["Kp_val", "Ki_val", "Kd_val"]].notna().all(axis=1)]
+            # === Show raw controller table
             st.markdown("### 🛠️ Debug: Raw Top 5 Controllers (before plotting)")
             st.dataframe(top5_df[[
                 "Kp_val", "Ki_val", "Kd_val",
@@ -1680,14 +1680,15 @@ elif mode == "⚙️ Optimize PID":
                 "RiseTime", "RiseTime_sim",
                 "SSE", "Cost"
             ]])
+
+            # === Filter valid controllers
             valid_rows = top5_df[
                 top5_df[["Kp_val", "Ki_val", "Kd_val"]].applymap(
                     lambda x: pd.notna(x) and np.isfinite(x)
                 ).all(axis=1)
             ].reset_index(drop=True)
 
-
-
+            # === Handle empty case
             if len(valid_rows) == 0:
                 st.warning("⚠️ No valid controllers available for plotting.")
             else:
@@ -1696,40 +1697,34 @@ elif mode == "⚙️ Optimize PID":
                     Ki_i = row["Ki_val"]
                     Kd_i = row["Kd_val"]
 
-                
-            #for idx, row in top5_df.iterrows():
-                #if pd.isna(row["Kp_val"]):
-                    #continue  # skip padded rows
+                    st.write(f"🔍 Plotting Controller #{idx+1}: Kp={Kp_i:.2f}, Ki={Ki_i:.2f}, Kd={Kd_i:.2f}")
 
-                #Kp_i, Ki_i, Kd_i = row["Kp_val"], row["Ki_val"], row["Kd_val"]
+                    try:
+                        P = control.tf([Kp_i], [1])
+                        I = control.tf([Ki_i], [1, 0])
+                        D = control.tf([Kd_i, 0], [1])
+                        C = P + I + D
+                        sys_cl = control.feedback(C * G, 1)
 
+                        t_response, y_response = control.step_response(sys_cl, t)
+                        e_response = 1.0 - y_response
 
-                try:
-                    P = control.tf([Kp_i], [1])
-                    I = control.tf([Ki_i], [1, 0])
-                    D = control.tf([Kd_i, 0], [1])
-                    C = P + I + D
-                    sys_cl = control.feedback(C * G, 1)
+                        fig_step5.add_trace(go.Scatter(
+                            x=t_response,
+                            y=y_response,
+                            mode='lines',
+                            name=f"#{idx+1}: Kp={Kp_i:.2f}, Ki={Ki_i:.2f}, Kd={Kd_i:.2f}"
+                        ))
 
-                    t_response, y_response = control.step_response(sys_cl, t)
-                    e_response = 1.0 - y_response
+                        fig_error5.add_trace(go.Scatter(
+                            x=t_response,
+                            y=e_response,
+                            mode='lines',
+                            name=f"#{idx+1}"
+                        ))
 
-                    fig_step5.add_trace(go.Scatter(
-                        x=t_response,
-                        y=y_response,
-                        mode='lines',
-                        name=f"#{idx+1}: Kp={Kp_i:.2f}, Ki={Ki_i:.2f}, Kd={Kd_i:.2f}"
-                    ))
-
-                    fig_error5.add_trace(go.Scatter(
-                        x=t_response,
-                        y=e_response,
-                        mode='lines',
-                        name=f"#{idx+1}"
-                    ))
-
-                except Exception as e:
-                    print(f"⚠️ Skipped controller #{idx+1} due to instability or simulation error: {e}")
+                    except Exception as e:
+                        st.warning(f"⚠️ Skipped controller #{idx+1} due to instability or simulation error: {e}")
 
             # Add setpoint line
             fig_step5.add_trace(go.Scatter(
@@ -1740,7 +1735,7 @@ elif mode == "⚙️ Optimize PID":
                 opacity=0.6
             ))
 
-            # === Layout for Step Response
+            # === Layouts
             fig_step5.update_layout(
                 title="Step Response of Top 5 Controllers",
                 xaxis=dict(title="Time [s]", range=[t_start, t_end], rangeslider=dict(visible=False)),
@@ -1752,7 +1747,6 @@ elif mode == "⚙️ Optimize PID":
                 template="plotly_white"
             )
 
-            # === Layout for Error Curve
             fig_error5.update_layout(
                 title="Tracking Error of Top 5 Controllers",
                 xaxis=dict(title="Time [s]", range=[t_start, t_end], rangeslider=dict(visible=False)),
@@ -1764,13 +1758,9 @@ elif mode == "⚙️ Optimize PID":
                 template="plotly_white"
             )
 
-            # === Display in Streamlit
+            # === Plot
             st.plotly_chart(fig_step5, use_container_width=True)
             st.plotly_chart(fig_error5, use_container_width=True)
-
-
-        except Exception as e:
-            st.error(f"❌ Optimization failed: {e}")
 
 
 
