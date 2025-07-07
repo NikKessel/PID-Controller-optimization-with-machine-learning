@@ -1669,9 +1669,16 @@ elif mode == "⚙️ Optimize PID":
             fig_error5 = go.Figure()
 
             #for idx, (Kp_i, Ki_i, Kd_i) in enumerate(top_5_pid_params):
-            for idx, row in top5_df.iterrows():
-                if pd.isna(row["Kp_val"]):
-                    continue  # skip padded rows
+            valid_rows = top5_df[top5_df[["Kp_val", "Ki_val", "Kd_val"]].notna().all(axis=1)]
+
+            for idx, row in valid_rows.iterrows():
+                Kp_i = row["Kp_val"]
+                Ki_i = row["Ki_val"]
+                Kd_i = row["Kd_val"]
+                
+            #for idx, row in top5_df.iterrows():
+                #if pd.isna(row["Kp_val"]):
+                    #continue  # skip padded rows
 
                 Kp_i, Ki_i, Kd_i = row["Kp_val"], row["Ki_val"], row["Kd_val"]
 
