@@ -1,5 +1,5 @@
 % === Configuration ===
-num_samples = 200000;
+num_samples = 300000;
 T_final = max(50);  % Simulation time
 results = {};
 all_t = {}; all_y = {};

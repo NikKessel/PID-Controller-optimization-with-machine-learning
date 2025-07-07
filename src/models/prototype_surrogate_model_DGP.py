@@ -14,7 +14,7 @@ from torch.utils.data import TensorDataset, DataLoader
 # === Load and preprocess dataset ===
 df = pd.read_csv(r"C:\Users\KesselN\Documents\GitHub\PID-Controller-optimization-with-machine-learning\src\data\pid_dataset_pidtune.csv")
 df = df.dropna(subset=["K", "T1", "T2","L", "Kp", "Ki", "Kd", "ISE", "Overshoot", "SettlingTime", "RiseTime"])
-df = df.sample(n=4000, random_state=42).reset_index(drop=True)
+df = df.sample(n=30000, random_state=42).reset_index(drop=True)
 
 # === Filter outliers ===
 print(f"Original dataset: {df.shape}")
@@ -26,10 +26,10 @@ df = df[df["RiseTime"] < 300]
 df = df[df["SettlingTime"] > 0.01000]
 df = df[df["RiseTime"] > 0.01000]
 #df = df[df["Overshoot"] > 0.001]
-df = df[df["Kp"] < 20 ]
+df = df[df["Kp"] < 50 ]
 df = df[df["Kp"] > 0.3 ]
-df = df[df["Ki"] < 20]
-df = df[df["Kd"] < 20]
+df = df[df["Ki"] < 50]
+df = df[df["Kd"] < 50]
 print(f"After filtering: {df.shape}")
 
 # Add log-transformed targets
