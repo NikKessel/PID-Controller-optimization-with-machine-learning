@@ -1697,7 +1697,7 @@ elif mode == "⚙️ Optimize PID":
                     Ki_i = row["Ki_val"]
                     Kd_i = row["Kd_val"]
 
-                    st.write(f"🔍 Plotting Controller #{idx+1}: Kp={Kp_i:.2f}, Ki={Ki_i:.2f}, Kd={Kd_i:.2f}")
+                    #st.write(f"🔍 Plotting Controller #{idx+1}: Kp={Kp_i:.2f}, Ki={Ki_i:.2f}, Kd={Kd_i:.2f}")
 
                     try:
                         P = control.tf([Kp_i], [1])
