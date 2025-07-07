@@ -64,7 +64,7 @@ def optimize_pid_for_system(K, T1, T2, T_d, model_choice, weights, constraints):
             dgp_scalers[m] = joblib.load(os.path.join(base_path, f"{m}_scaler.pkl"))
 
     def predict_surrogate(Kp, Ki, Kd):
-        print(f"🔍 predict_surrogate called with Kp={Kp}, Ki={Ki}, Kd={Kd}, model_choice={model_choice}")
+        #print(f"🔍 predict_surrogate called with Kp={Kp}, Ki={Ki}, Kd={Kd}, model_choice={model_choice}")
 
         if model_choice == "MLP":
             K_T1 = K * T1
@@ -82,7 +82,7 @@ def optimize_pid_for_system(K, T1, T2, T_d, model_choice, weights, constraints):
                 'Kp': Kp, 'Ki': Ki, 'Kd': Kd,
             }])
             X = X_df.values.astype(np.float32)
-            print(f"📊 DGP input shape: {X.shape}")
+            #print(f"📊 DGP input shape: {X.shape}")
 
             results_mean = []
             results_std = []
