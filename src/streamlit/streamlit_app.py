@@ -1093,6 +1093,28 @@ elif mode == "⚙️ Optimize PID":
     T1 = st.sidebar.number_input("T1", min_value=1.0, max_value=50.0, value=10.0)
     T2 = st.sidebar.number_input("T2", min_value=0.0, max_value=50.0, value=3.0)
     Td = st.sidebar.number_input("Td (Dead Time)", min_value=0.0, max_value=5.0, value=0.6)
+    
+    def satisfies_constraints(ctrl, constraints):
+        for metric, max_val in constraints.items():
+            if metric in ctrl and ctrl[metric] is not None:
+                if ctrl[metric] > max_val:
+                    return False
+        return True
+
+
+    import numpy as np
+    from control import tfdata
+    from numpy.polynomial import Polynomial
+
+    def is_stable(system):
+
+        _, den = tfdata(system)              # unpack numerator and denominator
+        den_coeffs = np.squeeze(den)         # flatten to 1D array
+        poles = np.roots(den_coeffs)         # compute poles
+        return np.all(np.real(poles) < 0)    # check left-half plane
+
+
+
     def predict_dgp(param, log_transform=True):
         #h = os.path.join(os.path.dirname(__file__), "streamlit_models", "dgp")
         base_path = os.path.join(os.path.dirname(__file__), "streamlit", "streamlit_models", "dgp")
@@ -1275,12 +1297,6 @@ elif mode == "⚙️ Optimize PID":
                     ise = sse = rtime = stime = os = None
                     ise_std = sse_std = rtime_std = stime_std = os_std = 0.0
 
-
-
-                st.success("✅ Optimization complete!")
-                st.markdown("#### Optimal PID Parameters")
-                st.write(f"Kp = {Kp:.4f}, Ki = {Ki:.4f}, Kd = {Kd:.4f}")
-
             
             
                         # === Simulate Closed-Loop with Optimal PID for true metrics ===
@@ -1327,27 +1343,81 @@ elif mode == "⚙️ Optimize PID":
                     settling_time_sim = t_sim[i]
                     break
 
-            st.markdown("#### 📊 Performance Comparison: Surrogate vs Simulation")
+
+
+                # === Stability check ===
+                # === Construct Plant G ===
+                if T2 > 0:
+                    G_base = control.tf([K], np.convolve([T1, 1], [T2, 1]))
+                else:
+                    G_base = control.tf([K], [T1, 1])
+
+                if Td > 0:
+                    num_d, den_d = control.pade(Td, 1)
+                    G_delay = control.tf(num_d, den_d)
+                    G_base = G_delay * G_base
+
+                # === Stability check for best_params ===
+                def is_pid_stable(Kp, Ki, Kd):
+                    P = control.tf([Kp], [1])
+                    I = control.tf([Ki], [1, 0])
+                    D = control.tf([Kd, 0], [1])
+                    C = P + I + D
+                    sys_cl = control.feedback(C * G_base, 1)
+                    return is_stable(sys_cl), sys_cl
+
+                is_stable_best, sys_cl = is_pid_stable(Kp, Ki, Kd)
+
+                # === If unstable, fallback to stable controller from evaluated_controllers ===
+                if not is_stable_best:
+                    fallback = None
+                    for ctrl in result["evaluated_controllers"]:
+                        Kp_i, Ki_i, Kd_i = ctrl["Kp"], ctrl["Ki"], ctrl["Kd"]
+                        stable, sys = is_pid_stable(Kp_i, Ki_i, Kd_i)
+                        if stable:
+                            fallback = (Kp_i, Ki_i, Kd_i, sys)
+                            break
+
+                    if fallback is not None:
+                        Kp, Ki, Kd, sys_cl = fallback
+                        st.info("⚠️ Best controller was unstable. Using best *stable* fallback controller instead.")
+                    else:
+                        st.error("❌ All evaluated controllers are unstable. Try different weights or constraints.")
+                        st.stop()  # Stop further execution
+
+
+            st.success("✅ Optimization complete!")
+            st.markdown("#### Optimal PID Parameters")
+            st.caption("This controller minimizes the weighted cost based on your selected metrics.")
+
+            #col1, col2, col3, col4 = st.columns(4)
+
+            #col1.metric("Kp", f"{Kp:.4f}")
+            #col2.metric("Ki", f"{Ki:.4f}")
+            #col3.metric("Kd", f"{Kd:.4f}")
+            #col4.metric("Cost", f"{Cost:.4f}")
+            #st.write(f"Kp = {Kp:.4f}, Ki = {Ki:.4f}, Kd = {Kd:.4f}")
+
+            #st.markdown("#### 📊 Performance Comparison: Surrogate vs Simulation")
 
             
-            combined_df = pd.DataFrame({
-                "Metric": ["ISE", "Overshoot (%)", "Settling Time (s)", "Rise Time (s)", "SSE"],
-                "Optimized (Predicted)": [
-                    f"{ise:.2f} ± {ise_std:.2f}",
-                    f"{os:.2f} ± {os_std:.2f}",
-                    f"{stime:.2f} ± {stime_std:.2f}",
-                    f"{rtime:.2f} ± {rtime_std:.2f}",
-                    f"{sse:.2f} ± {sse_std:.2f}"
-                ],
-                "Simulated (True)": [
-                    f"{ise_sim:.2f}", f"{overshoot_sim:.2f}",
-                    f"{settling_time_sim:.2f}", f"{rise_time_sim:.2f}", f"{sse_sim:.2f}"
-                ]
-            })
+            #combined_df = pd.DataFrame({
+                #"Metric": ["ISE", "Overshoot (%)", "Settling Time (s)", "Rise Time (s)", "SSE"],
+                #"Optimized (Predicted)": [
+                #    f"{ise:.2f} ± {ise_std:.2f}",
+                #    f"{os:.2f} ± {os_std:.2f}",
+                #    f"{stime:.2f} ± {stime_std:.2f}",
+                #    f"{rtime:.2f} ± {rtime_std:.2f}",
+                #    f"{sse:.2f} ± {sse_std:.2f}"
+                #],
+                #"Simulated (True)": [
+                 #   f"{ise_sim:.2f}", f"{overshoot_sim:.2f}",
+                  #  f"{settling_time_sim:.2f}", f"{rise_time_sim:.2f}", f"{sse_sim:.2f}"
+                #]
+            #})
 
-            st.table(data=combined_df)
+            #st.table(data=combined_df)
 
-            
             
             evaluated = result.get('evaluated_controllers', [])
             if not evaluated:
@@ -1358,52 +1428,154 @@ elif mode == "⚙️ Optimize PID":
                 unique_controllers = []
 
                 for idx, candidate in feasible_controllers.iterrows():
-                    candidate_params = candidate[['Kp', 'Ki', 'Kd']].values
-
-                    if not unique_controllers:
-                        unique_controllers.append(candidate)
+                    if not satisfies_constraints(candidate, constraints):
                         continue
 
-                    differences = [
-                        np.abs(candidate_params - np.array(ctrl[['Kp', 'Ki', 'Kd']]))
-                        for ctrl in unique_controllers
-                    ]
+                    candidate_params = candidate[['Kp', 'Ki', 'Kd']].values
+                    Kp_i, Ki_i, Kd_i = candidate_params
 
-                    is_different = all(np.any(diff >= 0.5) for diff in differences)
+                    # Construct controller
+                    P = control.tf([Kp_i], [1])
+                    I = control.tf([Ki_i], [1, 0])
+                    D = control.tf([Kd_i, 0], [1])
+                    C = P + I + D
 
-                    if is_different:
+                    # Plant
+                    if T2 > 0:
+                        G_candidate = control.tf([K], np.convolve([T1, 1], [T2, 1]))
+                    else:
+                        G_candidate = control.tf([K], [T1, 1])
+
+                    if Td > 0:
+                        num, den = control.pade(Td, 1)
+                        G_delay = control.tf(num, den)
+                        G_candidate = G_delay * G_candidate
+
+                    sys_cl_candidate = control.feedback(C * G_candidate, 1)
+
+                    if not is_stable(sys_cl_candidate):
+                        continue
+
+                    # Uniqueness check
+                    if not unique_controllers:
                         unique_controllers.append(candidate)
                     else:
-                        st.write("→ Controller skipped (too similar).")
+                        differences = [
+                            np.abs(candidate_params - np.array(ctrl[['Kp', 'Ki', 'Kd']]))
+                            for ctrl in unique_controllers
+                        ]
+                        is_different = all(np.any(diff >= 0.5) for diff in differences)
+                        #if is_different:
+                            #unique_controllers.append(candidate)
+                        if is_different:
+                            # === Simulate controller to get true performance metrics ===
+                            try:
+                                t_sim = np.linspace(0, max(2 * (T1 + T2 + Td), 100), 1000)
+                                t_response, y_response = control.step_response(sys_cl_candidate, t_sim)
+                                u_sim = np.ones_like(t_response)
+                                e_sim = u_sim - y_response
+
+                                candidate["ISE_sim"] = simpson(e_sim**2, t_response)
+                                candidate["SSE_sim"] = abs(1.0 - y_response[-1])
+                                candidate["Overshoot_sim"] = (np.max(y_response) - 1.0) * 100
+
+                                # Rise time
+                                try:
+                                    t_10 = t_response[np.where(y_response >= 0.1 * y_response[-1])[0][0]]
+                                    t_90 = t_response[np.where(y_response >= 0.9 * y_response[-1])[0][0]]
+                                    candidate["RiseTime_sim"] = t_90 - t_10
+                                except:
+                                    candidate["RiseTime_sim"] = np.nan
+
+                                # Settling time (±5%)
+                                tol = 0.05 * abs(y_response[-1])
+                                for i in range(len(y_response)):
+                                    if np.all((y_response[i:] >= 1.0 - tol) & (y_response[i:] <= 1.0 + tol)):
+                                        candidate["SettlingTime_sim"] = t_response[i]
+                                        break
+                                else:
+                                    candidate["SettlingTime_sim"] = np.nan
+
+                                # Now it's safe to append
+                                unique_controllers.append(candidate)
+
+                            except Exception as e:
+                                print(f"⚠️ Simulation failed for controller #{idx+1}: {e}")
+
 
                     if len(unique_controllers) >= 5:
                         break
 
+                # === Build DataFrame AFTER loop
                 top5_df = pd.DataFrame(unique_controllers)
 
-                # Padding if fewer than 5 controllers found
+                # Padding if fewer than 5
                 if len(top5_df) < 5:
-                    additional_rows = 5 - len(top5_df)
-                    top5_df = pd.concat([
-                        top5_df,
-                        pd.DataFrame([{
-                            'Kp': np.nan, 'Ki': np.nan, 'Kd': np.nan,
-                            'ISE': np.nan, 'Overshoot': np.nan, 'SettlingTime': np.nan,
-                            'RiseTime': np.nan, 'SSE': np.nan, 'Cost': np.nan
-                        }] * additional_rows)
-                    ], ignore_index=True)
+                    pad_rows = 5 - len(top5_df)
+                    padding = pd.DataFrame([{
+                        'Kp': np.nan, 'Ki': np.nan, 'Kd': np.nan,
+                        'ISE': np.nan, 'Overshoot': np.nan, 'SettlingTime': np.nan,
+                        'RiseTime': np.nan, 'SSE': np.nan, 'Cost': np.nan,
+                        'ISE_std': np.nan, 'Overshoot_std': np.nan,
+                        'SettlingTime_std': np.nan, 'RiseTime_std': np.nan
+                    }] * pad_rows)
+                    top5_df = pd.concat([top5_df, padding], ignore_index=True)
+
+                # Save raw values
+                top5_df["Kp_val"] = top5_df["Kp"]
+                top5_df["Ki_val"] = top5_df["Ki"]
+                top5_df["Kd_val"] = top5_df["Kd"]
+
+                def fmt(val, std):
+                    try:
+                        val = float(val)
+                        std = float(std)
+                        return f"{val:.2f} ± {std:.2f}"
+                    except (ValueError, TypeError):
+                        return "-"
+
+                top5_df["Kp"] = top5_df.apply(lambda r: fmt(r["Kp_val"], r["ISE_std"]), axis=1)
+                top5_df["Ki"] = top5_df.apply(lambda r: fmt(r["Ki_val"], r["Overshoot_std"]), axis=1)
+                top5_df["Kd"] = top5_df.apply(lambda r: fmt(r["Kd_val"], r["SettlingTime_std"]), axis=1)
+                top5_df["ISE"] = top5_df.apply(lambda r: fmt(r["ISE"], r["ISE_std"]), axis=1)
+                top5_df["Overshoot"] = top5_df.apply(lambda r: fmt(r["Overshoot"], r["Overshoot_std"]), axis=1)
+                top5_df["SettlingTime"] = top5_df.apply(lambda r: fmt(r["SettlingTime"], r["SettlingTime_std"]), axis=1)
+                top5_df["RiseTime"] = top5_df.apply(lambda r: fmt(r["RiseTime"], r["RiseTime_std"]), axis=1)
+                top5_df["ISE_sim"] = top5_df["ISE_sim"].round(2)
+                top5_df["Overshoot_sim"] = top5_df["Overshoot_sim"].round(2)
+                top5_df["SettlingTime_sim"] = top5_df["SettlingTime_sim"].round(2)
+                top5_df["RiseTime_sim"] = top5_df["RiseTime_sim"].round(2)
+                top5_df["SSE"] = top5_df["SSE_sim"].round(3)  # Final column (single value)
+
+
+                top5_df.drop(columns=[
+                    'ISE_std', 'Overshoot_std', 'SettlingTime_std', 'RiseTime_std', 'SSE_std'
+                ], inplace=True, errors='ignore')
+
+                #st.markdown("#### 🏆 Top 5 Distinct PID Controllers")
+                #st.dataframe(top5_df.style.format({
+                    #'SSE': '{:.3f}', 'Cost': '{:.2f}'
+                #}))
+                
+                display_cols = [
+                    "Kp", "Ki", "Kd",
+                    "ISE", "ISE_sim",
+                    "Overshoot", "Overshoot_sim",
+                    "SettlingTime", "SettlingTime_sim",
+                    "RiseTime", "RiseTime_sim",
+                    "SSE", "Cost",
+                    
+                ]
 
                 st.markdown("#### 🏆 Top 5 Distinct PID Controllers")
-                st.dataframe(top5_df.style.format({
-                    'Kp': '{:.3f}', 'Ki': '{:.3f}', 'Kd': '{:.3f}',
-                    'ISE': '{:.2f}', 'Overshoot': '{:.2f}', 'SettlingTime': '{:.2f}',
-                    'RiseTime': '{:.2f}', 'SSE': '{:.3f}', 'Cost': '{:.2f}'
+                st.dataframe(top5_df[display_cols].style.format({
+                    'SSE': '{:.3f}', 'Cost': '{:.2f}'
                 }))
 
 
-            # === Step Response ===
 
-            st.markdown("#### 📈 Step Responses of Top 5 Controllers")
+
+            # === Step Response ===
 
             fig1, ax1 = plt.subplots(figsize=(8, 4))
             fig2, ax2 = plt.subplots(figsize=(8, 4))
@@ -1415,7 +1587,9 @@ elif mode == "⚙️ Optimize PID":
                 if pd.isna(row["Kp"]):
                     continue  # skip padded rows
 
-                Kp_i, Ki_i, Kd_i = row["Kp"], row["Ki"], row["Kd"]
+                #Kp_i, Ki_i, Kd_i = row["Kp"], row["Ki"], row["Kd"]
+                Kp_i, Ki_i, Kd_i = row["Kp_val"], row["Ki_val"], row["Kd_val"]
+
 
                 # === Plant
                 if T2 > 0:
@@ -1434,7 +1608,16 @@ elif mode == "⚙️ Optimize PID":
                     G_delay = control.tf(num, den)
                     G = control.series(G_delay, G)
 
+                #sys_cl = control.feedback(C * G, 1)
                 sys_cl = control.feedback(C * G, 1)
+
+                # Check stability
+                sys_cl = control.feedback(C * G, 1)
+
+                if not is_stable(sys_cl):
+                    print(f"⚠️ Skipping unstable controller.")
+                    continue
+
 
                 try:
                     t_response, y_response = control.step_response(sys_cl, t)
@@ -1443,7 +1626,8 @@ elif mode == "⚙️ Optimize PID":
                     ax1.plot(t_response, y_response, label=f"#{idx+1}: Kp={Kp_i:.2f}, Ki={Ki_i:.2f}, Kd={Kd_i:.2f}")
                     ax2.plot(t_response, e_response, label=f"#{idx+1}")
                 except Exception as e:
-                    print(f"⚠️ Skipped controller #{idx+1} due to instability or simulation error: {e}")
+                    print(f"⚠️ Skipped controller #{idx+1} due to simulation error: {e}")
+
 
             # Plot setpoint line
             ax1.plot(t, step_input, "--", color="black", label="Setpoint r(t)=1")
@@ -1465,10 +1649,10 @@ elif mode == "⚙️ Optimize PID":
 
             #for idx, (Kp_i, Ki_i, Kd_i) in enumerate(top_5_pid_params):
             for idx, row in top5_df.iterrows():
-                if pd.isna(row["Kp"]):
+                if pd.isna(row["Kp_val"]):
                     continue  # skip padded rows
 
-                Kp_i, Ki_i, Kd_i = row["Kp"], row["Ki"], row["Kd"]
+                Kp_i, Ki_i, Kd_i = row["Kp_val"], row["Ki_val"], row["Kd_val"]
 
 
                 try:
