@@ -1670,16 +1670,16 @@ elif mode == "⚙️ Optimize PID":
             fig_error5 = go.Figure()
 
             # === Show raw controller table
-            st.markdown("### 🛠️ Debug: Raw Top 5 Controllers (before plotting)")
-            st.dataframe(top5_df[[
-                "Kp_val", "Ki_val", "Kd_val",
-                "Kp", "Ki", "Kd",
-                "ISE", "ISE_sim",
-                "Overshoot", "Overshoot_sim",
-                "SettlingTime", "SettlingTime_sim",
-                "RiseTime", "RiseTime_sim",
-                "SSE", "Cost"
-            ]])
+            #st.markdown("### 🛠️ Debug: Raw Top 5 Controllers (before plotting)")
+            #st.dataframe(top5_df[[
+            #    "Kp_val", "Ki_val", "Kd_val",
+            #    "Kp", "Ki", "Kd",
+            #    "ISE", "ISE_sim",
+            #    "Overshoot", "Overshoot_sim",
+            #    "SettlingTime", "SettlingTime_sim",
+            #    "RiseTime", "RiseTime_sim",
+            #    "SSE", "Cost"
+            #]])
 
             # === Filter valid controllers
             valid_rows = top5_df[
