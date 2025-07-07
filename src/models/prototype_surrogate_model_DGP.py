@@ -19,13 +19,13 @@ df = df.sample(n=30000, random_state=42).reset_index(drop=True)
 # === Filter outliers ===
 print(f"Original dataset: {df.shape}")
 
-df = df[df["ISE"] < 100]
+df = df[df["ISE"] < 50]
 df = df[df["ISE"] > 0.001]
 df = df[df["SettlingTime"] < 500]
 df = df[df["RiseTime"] < 300]
 df = df[df["SettlingTime"] > 0.01000]
 df = df[df["RiseTime"] > 0.01000]
-#df = df[df["Overshoot"] > 0.001]
+df = df[df["Overshoot"] < 200]
 df = df[df["Kp"] < 50 ]
 df = df[df["Kp"] > 0.3 ]
 df = df[df["Ki"] < 50]
