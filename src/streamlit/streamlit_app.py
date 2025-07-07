@@ -1762,7 +1762,8 @@ elif mode == "⚙️ Optimize PID":
             st.plotly_chart(fig_step5, use_container_width=True)
             st.plotly_chart(fig_error5, use_container_width=True)
 
-
+        except Exception as e:
+            st.error(f"❌ Optimization failed: {e}")
 
                 
 elif mode == "🧪 Simulink Validation":
