@@ -1680,7 +1680,7 @@ elif mode == "⚙️ Optimize PID":
                 #if pd.isna(row["Kp_val"]):
                     #continue  # skip padded rows
 
-                Kp_i, Ki_i, Kd_i = row["Kp_val"], row["Ki_val"], row["Kd_val"]
+                #Kp_i, Ki_i, Kd_i = row["Kp_val"], row["Ki_val"], row["Kd_val"]
 
 
                 try:
