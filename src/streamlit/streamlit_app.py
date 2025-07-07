@@ -1566,7 +1566,7 @@ elif mode == "⚙️ Optimize PID":
                     top5_df["RiseTime_sim"] = pd.to_numeric(top5_df["RiseTime_sim"], errors="coerce").round(2)
                     top5_df["SSE"] = pd.to_numeric(top5_df["SSE_sim"], errors="coerce").round(3)
                 except Exception as e:
-                    st.error(f"❌ Simulation column conversion failed: {e}")
+                    #st.error(f"❌ Simulation column conversion failed: {e}")
 
                 # === STEP 5: Drop std columns (safe)
                 top5_df.drop(columns=[
