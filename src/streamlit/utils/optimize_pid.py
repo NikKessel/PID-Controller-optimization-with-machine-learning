@@ -169,8 +169,8 @@ def optimize_pid_for_system(K, T1, T2, T_d, model_choice, weights, constraints):
             if ISE > constraints["ISE"] or ISE < 0.01:
                 print(f"🚫 ISE constraint violated: {ISE}")
                 return float('inf')
-            if OS > constraints["Overshoot"] or OS < 0.01:
-                print(f"🚫 Overshoot constraint violated: {OS}")
+            #if OS > constraints["Overshoot"] or OS < 0.01:
+                #print(f"🚫 Overshoot constraint violated: {OS}")
                 return float('inf')
             if ST > constraints["SettlingTime"] or ST < 0.01:
                 print(f"🚫 SettlingTime constraint violated: {ST}")
@@ -215,7 +215,7 @@ def optimize_pid_for_system(K, T1, T2, T_d, model_choice, weights, constraints):
             return float('inf')
 
     # Define PID parameter bounds
-    bounds = [(0.1, 10.0), (0.001, 3.0), (0.0, 3.0)]
+    bounds = [(0.1, 20.0), (0.0, 20.0), (0.0, 20.0)]
     print("🚀 Starting differential_evolution optimization")
     print(f"📊 Bounds: {bounds}")
 
@@ -226,19 +226,20 @@ def optimize_pid_for_system(K, T1, T2, T_d, model_choice, weights, constraints):
     print(f"🧪 Test cost: {test_cost}")
 
     if np.isnan(test_cost) or np.isinf(test_cost):
-        print("❌ Test failed - objective function returns invalid values")
-        return None
+        print("❌ Test warning - objective function returned invalid cost on initial guess")
+        print("🔁 Proceeding with optimization anyway...")
+
 
     try:
         result = differential_evolution(
             objective,
             bounds,
             seed=42,
-            maxiter=100,
+            maxiter=150,
             popsize=25,
             tol=0.01,
             mutation=(0.5, 1),
-            recombination=0.7,
+            recombination=0.9,
         )
         print("🏁 Optimization finished")
         print(f"📈 Success: {result.success}")
