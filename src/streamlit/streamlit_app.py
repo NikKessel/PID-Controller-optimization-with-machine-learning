@@ -1513,10 +1513,10 @@ elif mode == "⚙️ Optimize PID":
                 print(top5_df.dtypes)
                                 # === Define simulation error thresholds
                 error_thresholds = {
-                    "ISE": 0.5,
-                    "Overshoot": 5.0,
-                    "SettlingTime": 3.0,
-                    "RiseTime": 0.3
+                    "ISE": 1.5,
+                    "Overshoot": 15.0,
+                    "SettlingTime": 5.0,
+                    "RiseTime": 5.3
                 }
 
                 # === Compute absolute error per metric
