@@ -1521,61 +1521,72 @@ elif mode == "⚙️ Optimize PID":
                     }] * pad_rows)
                     top5_df = pd.concat([top5_df, padding], ignore_index=True)
 
-                # Save raw values
-                #top5_df["Kp_val"] = top5_df["Kp"]
-                #top5_df["Ki_val"] = top5_df["Ki"]
-                #top5_df["Kd_val"] = top5_df["Kd"]
-                top5_df["Kp_val"] = pd.to_numeric(top5_df["Kp"], errors="coerce")
-                top5_df["Ki_val"] = pd.to_numeric(top5_df["Ki"], errors="coerce")
-                top5_df["Kd_val"] = pd.to_numeric(top5_df["Kd"], errors="coerce")
-                print(top5_df.dtypes)
+                    # === After unique_controllers is filled ===
+                    top5_df = pd.DataFrame(unique_controllers)
 
+                    # === Padding if fewer than 5
+                    if len(top5_df) < 5:
+                        pad_rows = 5 - len(top5_df)
+                        padding = pd.DataFrame([{
+                            'Kp': np.nan, 'Ki': np.nan, 'Kd': np.nan,
+                            'ISE': np.nan, 'Overshoot': np.nan, 'SettlingTime': np.nan,
+                            'RiseTime': np.nan, 'SSE': np.nan, 'Cost': np.nan,
+                            'ISE_std': np.nan, 'Overshoot_std': np.nan,
+                            'SettlingTime_std': np.nan, 'RiseTime_std': np.nan,
+                            'ISE_sim': np.nan, 'Overshoot_sim': np.nan,
+                            'SettlingTime_sim': np.nan, 'RiseTime_sim': np.nan,
+                            'SSE_sim': np.nan
+                        }] * pad_rows)
+                        top5_df = pd.concat([top5_df, padding], ignore_index=True)
 
-                def fmt(val, std):
-                    try:
-                        val = float(val)
-                        std = float(std)
-                        return f"{val:.2f} ± {std:.2f}"
-                    except (ValueError, TypeError):
-                        return "-"
+                    # === STEP 1: Ensure raw numeric copies BEFORE formatting
+                    top5_df["Kp_val"] = pd.to_numeric(top5_df["Kp"], errors="coerce")
+                    top5_df["Ki_val"] = pd.to_numeric(top5_df["Ki"], errors="coerce")
+                    top5_df["Kd_val"] = pd.to_numeric(top5_df["Kd"], errors="coerce")
 
-                top5_df["Kp"] = top5_df.apply(lambda r: fmt(r["Kp_val"], r["ISE_std"]), axis=1)
-                top5_df["Ki"] = top5_df.apply(lambda r: fmt(r["Ki_val"], r["Overshoot_std"]), axis=1)
-                top5_df["Kd"] = top5_df.apply(lambda r: fmt(r["Kd_val"], r["SettlingTime_std"]), axis=1)
-                top5_df["ISE"] = top5_df.apply(lambda r: fmt(r["ISE"], r["ISE_std"]), axis=1)
-                top5_df["Overshoot"] = top5_df.apply(lambda r: fmt(r["Overshoot"], r["Overshoot_std"]), axis=1)
-                top5_df["SettlingTime"] = top5_df.apply(lambda r: fmt(r["SettlingTime"], r["SettlingTime_std"]), axis=1)
-                top5_df["RiseTime"] = top5_df.apply(lambda r: fmt(r["RiseTime"], r["RiseTime_std"]), axis=1)
-                top5_df["ISE_sim"] = top5_df["ISE_sim"].round(2)
-                top5_df["Overshoot_sim"] = top5_df["Overshoot_sim"].round(2)
-                top5_df["SettlingTime_sim"] = top5_df["SettlingTime_sim"].round(2)
-                top5_df["RiseTime_sim"] = top5_df["RiseTime_sim"].round(2)
-                top5_df["SSE"] = top5_df["SSE_sim"].round(3)  # Final column (single value)
+                    # === STEP 2: Define confidence interval formatter
+                    def fmt(val, std):
+                        try:
+                            val = float(val)
+                            std = float(std)
+                            return f"{val:.2f} ± {std:.2f}"
+                        except:
+                            return "-"
 
+                    # === STEP 3: Apply formatting to DISPLAY columns
+                    top5_df["Kp"] = top5_df.apply(lambda r: fmt(r["Kp_val"], r["ISE_std"]), axis=1)
+                    top5_df["Ki"] = top5_df.apply(lambda r: fmt(r["Ki_val"], r["Overshoot_std"]), axis=1)
+                    top5_df["Kd"] = top5_df.apply(lambda r: fmt(r["Kd_val"], r["SettlingTime_std"]), axis=1)
+                    top5_df["ISE"] = top5_df.apply(lambda r: fmt(r["ISE"], r["ISE_std"]), axis=1)
+                    top5_df["Overshoot"] = top5_df.apply(lambda r: fmt(r["Overshoot"], r["Overshoot_std"]), axis=1)
+                    top5_df["SettlingTime"] = top5_df.apply(lambda r: fmt(r["SettlingTime"], r["SettlingTime_std"]), axis=1)
+                    top5_df["RiseTime"] = top5_df.apply(lambda r: fmt(r["RiseTime"], r["RiseTime_std"]), axis=1)
 
-                top5_df.drop(columns=[
-                    'ISE_std', 'Overshoot_std', 'SettlingTime_std', 'RiseTime_std', 'SSE_std'
-                ], inplace=True, errors='ignore')
+                    # === STEP 4: Round numeric simulation outputs
+                    top5_df["ISE_sim"] = pd.to_numeric(top5_df["ISE_sim"], errors="coerce").round(2)
+                    top5_df["Overshoot_sim"] = pd.to_numeric(top5_df["Overshoot_sim"], errors="coerce").round(2)
+                    top5_df["SettlingTime_sim"] = pd.to_numeric(top5_df["SettlingTime_sim"], errors="coerce").round(2)
+                    top5_df["RiseTime_sim"] = pd.to_numeric(top5_df["RiseTime_sim"], errors="coerce").round(2)
+                    top5_df["SSE"] = pd.to_numeric(top5_df["SSE_sim"], errors="coerce").round(3)
 
-                #st.markdown("#### 🏆 Top 5 Distinct PID Controllers")
-                #st.dataframe(top5_df.style.format({
-                    #'SSE': '{:.3f}', 'Cost': '{:.2f}'
-                #}))
-                
-                display_cols = [
-                    "Kp", "Ki", "Kd",
-                    "ISE", "ISE_sim",
-                    "Overshoot", "Overshoot_sim",
-                    "SettlingTime", "SettlingTime_sim",
-                    "RiseTime", "RiseTime_sim",
-                    "SSE", "Cost",
-                    
-                ]
+                    # === STEP 5: Drop unneeded std columns
+                    top5_df.drop(columns=[
+                        'ISE_std', 'Overshoot_std', 'SettlingTime_std', 'RiseTime_std', 'SSE_std'
+                    ], inplace=True, errors='ignore')
 
-                st.markdown("#### 🏆 Top 5 Distinct PID Controllers")
-                st.dataframe(top5_df[display_cols].style.format({
-                    'SSE': '{:.3f}', 'Cost': '{:.2f}'
-                }))
+                    # === STEP 6: Display once
+                    display_cols = [
+                        "Kp", "Ki", "Kd",
+                        "ISE", "ISE_sim",
+                        "Overshoot", "Overshoot_sim",
+                        "SettlingTime", "SettlingTime_sim",
+                        "RiseTime", "RiseTime_sim",
+                        "SSE", "Cost",
+                    ]
+                    st.markdown("#### 🏆 Top 5 Distinct PID Controllers")
+                    st.dataframe(top5_df[display_cols].style.format({
+                        'SSE': '{:.3f}', 'Cost': '{:.2f}'
+                    }))
 
 
 
