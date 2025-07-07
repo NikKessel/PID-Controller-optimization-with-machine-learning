@@ -1684,7 +1684,8 @@ elif mode == "⚙️ Optimize PID":
                 top5_df[["Kp_val", "Ki_val", "Kd_val"]].applymap(
                     lambda x: pd.notna(x) and np.isfinite(x)
                 ).all(axis=1)
-            ]
+            ].reset_index(drop=True)
+
 
 
             if len(valid_rows) == 0:
