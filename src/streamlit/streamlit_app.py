@@ -1511,10 +1511,37 @@ elif mode == "⚙️ Optimize PID":
 
                 print("✅ [DEBUG] Initial top5_df types:")
                 print(top5_df.dtypes)
+                                # === Define simulation error thresholds
+                error_thresholds = {
+                    "ISE": 0.5,
+                    "Overshoot": 5.0,
+                    "SettlingTime": 3.0,
+                    "RiseTime": 0.3
+                }
+
+                # === Compute absolute error per metric
+                for metric in ["ISE", "Overshoot", "SettlingTime", "RiseTime"]:
+                    try:
+                        top5_df[f"{metric}_err"] = (top5_df[metric] - top5_df[f"{metric}_sim"]).abs()
+                    except Exception as e:
+                        st.warning(f"Skipping {metric} error check: {e}")
+
+                # === Apply filtering condition
+                valid_top5_df = top5_df[
+                    (top5_df["ISE_err"] <= error_thresholds["ISE"]) &
+                    (top5_df["Overshoot_err"] <= error_thresholds["Overshoot"]) &
+                    (top5_df["SettlingTime_err"] <= error_thresholds["SettlingTime"]) &
+                    (top5_df["RiseTime_err"] <= error_thresholds["RiseTime"])
+                ].copy()
+
+                # === Fallback: use all if none meet threshold
+                if valid_top5_df.empty:
+                    st.warning("⚠️ No top controllers met simulation accuracy thresholds. Showing unfiltered top 5.")
+                    valid_top5_df = top5_df.copy()
 
                 # === Padding if fewer than 5
-                if len(top5_df) < 5:
-                    pad_rows = 5 - len(top5_df)
+                if len(valid_top5_df) < 5:
+                    pad_rows = 5 - len(valid_top5_df)
                     padding = pd.DataFrame([{
                         'Kp': np.nan, 'Ki': np.nan, 'Kd': np.nan,
                         'ISE': np.nan, 'Overshoot': np.nan, 'SettlingTime': np.nan,
@@ -1525,10 +1552,12 @@ elif mode == "⚙️ Optimize PID":
                         'SettlingTime_sim': np.nan, 'RiseTime_sim': np.nan,
                         'SSE_sim': np.nan
                     }] * pad_rows)
-                    top5_df = pd.concat([top5_df, padding], ignore_index=True)
+                    valid_top5_df = pd.concat([valid_top5_df, padding], ignore_index=True)
 
-                print("✅ [DEBUG] After padding:")
-                print(top5_df.dtypes)
+                # Continue processing with filtered top5_df
+                top5_df = valid_top5_df
+
+
 
                 # === STEP 1: Save raw numeric copies BEFORE formatting
                 try:
