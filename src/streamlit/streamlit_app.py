@@ -1681,8 +1681,11 @@ elif mode == "⚙️ Optimize PID":
                 "SSE", "Cost"
             ]])
             valid_rows = top5_df[
-                ~top5_df[["Kp_val", "Ki_val", "Kd_val"]].isin(["nan ± nan"]).any(axis=1)
-            ].copy()
+                top5_df[["Kp_val", "Ki_val", "Kd_val"]].applymap(
+                    lambda x: pd.notna(x) and np.isfinite(x)
+                ).all(axis=1)
+            ]
+
 
             if len(valid_rows) == 0:
                 st.warning("⚠️ No valid controllers available for plotting.")
