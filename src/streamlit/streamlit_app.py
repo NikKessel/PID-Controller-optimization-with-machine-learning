@@ -1380,7 +1380,7 @@ elif mode == "⚙️ Optimize PID":
 
                     if fallback is not None:
                         Kp, Ki, Kd, sys_cl = fallback
-                        st.info("⚠️ Best controller was unstable. Using best *stable* fallback controller instead.")
+                        #st.info("⚠️ Best controller was unstable. Using best *stable* fallback controller instead.")
                     else:
                         st.error("❌ All evaluated controllers are unstable. Try different weights or constraints.")
                         st.stop()  # Stop further execution
@@ -1669,12 +1669,21 @@ elif mode == "⚙️ Optimize PID":
             fig_error5 = go.Figure()
 
             #for idx, (Kp_i, Ki_i, Kd_i) in enumerate(top_5_pid_params):
-            valid_rows = top5_df[top5_df[["Kp_val", "Ki_val", "Kd_val"]].notna().all(axis=1)]
+            #valid_rows = top5_df[top5_df[["Kp_val", "Ki_val", "Kd_val"]].notna().all(axis=1)]
+            valid_rows = top5_df[
+                top5_df[["Kp_val", "Ki_val", "Kd_val"]]
+                .applymap(lambda x: np.isfinite(x) and not pd.isna(x))
+                .all(axis=1)
+            ]
 
-            for idx, row in valid_rows.iterrows():
-                Kp_i = row["Kp_val"]
-                Ki_i = row["Ki_val"]
-                Kd_i = row["Kd_val"]
+            if len(valid_rows) == 0:
+                st.warning("⚠️ No valid controllers available for plotting.")
+            else:
+                for idx, row in valid_rows.iterrows():
+                    Kp_i = row["Kp_val"]
+                    Ki_i = row["Ki_val"]
+                    Kd_i = row["Kd_val"]
+
                 
             #for idx, row in top5_df.iterrows():
                 #if pd.isna(row["Kp_val"]):
