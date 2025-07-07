@@ -162,8 +162,8 @@ def optimize_pid_for_system(K, T1, T2, T_d, model_choice, weights, constraints):
                 SSE = 0.0
                 SSE_std = 0.0
 
-            print(f"✅ Unpacked metrics: ISE={ISE}, SSE={SSE}, RT={RT}, ST={ST}, OS={OS}")
-            print(f"✅ Unpacked stds: ISE_std={ISE_std}, SSE_std={SSE_std}, RT_std={RT_std}, ST_std={ST_std}, OS_std={OS_std}")
+            #print(f"✅ Unpacked metrics: ISE={ISE}, SSE={SSE}, RT={RT}, ST={ST}, OS={OS}")
+            #print(f"✅ Unpacked stds: ISE_std={ISE_std}, SSE_std={SSE_std}, RT_std={RT_std}, ST_std={ST_std}, OS_std={OS_std}")
 
             # Constraint checks (means only)
             if ISE > constraints["ISE"] or ISE < 0.01:
@@ -188,7 +188,7 @@ def optimize_pid_for_system(K, T1, T2, T_d, model_choice, weights, constraints):
                     weights["SettlingTime"] * ST +
                     weights["RiseTime"] * RT)
 
-            print(f"✅ Valid solution found with cost: {cost}")
+            #print(f"✅ Valid solution found with cost: {cost}")
 
             evaluated_controllers.append({
                 'Kp': Kp, 'Ki': Ki, 'Kd': Kd,
@@ -241,17 +241,17 @@ def optimize_pid_for_system(K, T1, T2, T_d, model_choice, weights, constraints):
             mutation=(0.5, 1),
             recombination=0.9,
         )
-        print("🏁 Optimization finished")
-        print(f"📈 Success: {result.success}")
-        print(f"📈 Message: {result.message}")
-        print(f"📈 Iterations: {result.nit}")
-        print(f"📈 Function evaluations: {result.nfev}")
+        #print("🏁 Optimization finished")
+        #print(f"📈 Success: {result.success}")
+        #print(f"📈 Message: {result.message}")
+        #print(f"📈 Iterations: {result.nit}")
+        #print(f"📈 Function evaluations: {result.nfev}")
 
         if result.success:
             best_Kp, best_Ki, best_Kd = result.x
             best_metrics = predict_surrogate(best_Kp, best_Ki, best_Kd)
-            print(f"🎯 Best parameters: Kp={best_Kp}, Ki={best_Ki}, Kd={best_Kd}")
-            print(f"🎯 Best metrics: {best_metrics}")
+            #print(f"🎯 Best parameters: Kp={best_Kp}, Ki={best_Ki}, Kd={best_Kd}")
+            #print(f"🎯 Best metrics: {best_metrics}")
 
             return {
                 'success': True,
