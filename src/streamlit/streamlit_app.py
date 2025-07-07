@@ -1533,6 +1533,8 @@ elif mode == "⚙️ Optimize PID":
                     (top5_df["SettlingTime_err"] <= error_thresholds["SettlingTime"]) &
                     (top5_df["RiseTime_err"] <= error_thresholds["RiseTime"])
                 ].copy()
+                num_valid = len(valid_top5_df)
+                print(f"✅ [DEBUG] {num_valid} out of {len(top5_df)} controllers passed the true cost accuracy check.")
 
                 # === Fallback: use all if none meet threshold
                 if valid_top5_df.empty:
