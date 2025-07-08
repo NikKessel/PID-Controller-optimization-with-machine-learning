@@ -798,7 +798,8 @@ elif mode == "📊 Evaluate PID":
             std = pred_dist.stddev.item()
 
             if log_transform:
-                mean_exp = np.exp(mean)
+                #mean_exp = np.exp(mean)
+                mean_exp = mean
                 std_exp = mean_exp * std
                 return mean_exp, std_exp
             else:
@@ -876,7 +877,8 @@ elif mode == "📊 Evaluate PID":
                             std = pred_dist.stddev.item()
 
                             if log_transform:
-                                mean_exp = np.exp(mean)
+                                #mean_exp = np.exp(mean)
+                                mean_exp = mean
                                 std_exp = mean_exp * std  # ∂exp ≈ exp(x)*Δx
                                 return mean_exp, std_exp
                             else:
@@ -1155,7 +1157,9 @@ elif mode == "⚙️ Optimize PID":
             std = pred_dist.stddev.item()
 
             if log_transform:
-                mean_exp = np.exp(mean)
+                #mean_exp = np.exp(mean)
+                mean_exp = mean
+
                 std_exp = mean_exp * std
                 return mean_exp, std_exp
             else:
@@ -1223,7 +1227,8 @@ elif mode == "⚙️ Optimize PID":
                             std = pred_dist.stddev.item()
 
                             if log_transform:
-                                mean_exp = np.exp(mean)
+                                #mean_exp = np.exp(mean)
+                                mean_exp = mean
                                 std_exp = mean_exp * std  # ∂exp ≈ exp(x)*Δx
                                 return mean_exp, std_exp
                             else:
