@@ -33,9 +33,13 @@ df = df[df["Kd"] < 50]
 print(f"After filtering: {df.shape}")
 
 # Add log-transformed targets
-df["ISE_log"] = np.log1p(df["ISE"])
-df["SettlingTime_log"] = np.log1p(df["SettlingTime"])
-df["RiseTime_log"] = np.log1p(df["RiseTime"])
+#f["ISE_log"] = np.log1p(df["ISE"])
+#df["SettlingTime_log"] = np.log1p(df["SettlingTime"])
+#df["RiseTime_log"] = np.log1p(df["RiseTime"])
+
+df["ISE_log"] = df["ISE"]
+df["SettlingTime_log"] = df["SettlingTime"]
+df["RiseTime_log"] = df["RiseTime"]
 
 features = ["K", "T1", "T2", "L", "Kp", "Ki", "Kd"]
 target_config = {
