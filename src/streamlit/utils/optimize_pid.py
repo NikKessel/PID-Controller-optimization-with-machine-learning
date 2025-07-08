@@ -122,7 +122,7 @@ def optimize_pid_for_system(K, T1, T2, T_d, model_choice, weights, constraints):
             #print(f"🎯 Objective called with params: Kp={Kp}, Ki={Ki}, Kd={Kd}")
 
             predictions = predict_surrogate(Kp, Ki, Kd)
-            #print(f"🔍 Raw predictions from surrogate: {predictions}")
+            print(f"🔍 Raw predictions from surrogate: {predictions}")
 
             if predictions is None:
                 print("❌ predict_surrogate returned None")
@@ -163,8 +163,8 @@ def optimize_pid_for_system(K, T1, T2, T_d, model_choice, weights, constraints):
                 SSE = 0.0
                 SSE_std = 0.0
 
-            #print(f"✅ Unpacked metrics: ISE={ISE}, SSE={SSE}, RT={RT}, ST={ST}, OS={OS}")
-            #print(f"✅ Unpacked stds: ISE_std={ISE_std}, SSE_std={SSE_std}, RT_std={RT_std}, ST_std={ST_std}, OS_std={OS_std}")
+            print(f"✅ Unpacked metrics: ISE={ISE}, SSE={SSE}, RT={RT}, ST={ST}, OS={OS}")
+            print(f"✅ Unpacked stds: ISE_std={ISE_std}, SSE_std={SSE_std}, RT_std={RT_std}, ST_std={ST_std}, OS_std={OS_std}")
 
             # Constraint checks (means only)
             if ISE > constraints["ISE"] or ISE < 0.01:
@@ -251,8 +251,8 @@ def optimize_pid_for_system(K, T1, T2, T_d, model_choice, weights, constraints):
         if result.success:
             best_Kp, best_Ki, best_Kd = result.x
             best_metrics = predict_surrogate(best_Kp, best_Ki, best_Kd)
-            #print(f"🎯 Best parameters: Kp={best_Kp}, Ki={best_Ki}, Kd={best_Kd}")
-            #print(f"🎯 Best metrics: {best_metrics}")
+            print(f"🎯 Best parameters: Kp={best_Kp}, Ki={best_Ki}, Kd={best_Kd}")
+            print(f"🎯 Best metrics: {best_metrics}")
 
             return {
                 'success': True,

@@ -555,7 +555,7 @@ if mode == "🔍 Predict PID":
 
                 # === Settling Time (±5% band)
                 final_val = y[-1]
-                tol = 0.05 * abs(final_val)
+                tol = 0.02 * abs(final_val)
                 lower = final_val - tol
                 upper = final_val + tol
 
@@ -623,7 +623,7 @@ if mode == "🔍 Predict PID":
             #within_bounds = np.abs(y_ml - 1.0) < 0.02
             #settling_time = t_ml[np.where(within_bounds)[-1][-1]] if np.any(within_bounds) else np.nan
             final_val = y_ml[-1]
-            tol = 0.05 * abs(final_val)
+            tol = 0.02 * abs(final_val)
             lower_bound = final_val - tol
             upper_bound = final_val + tol
 
@@ -645,7 +645,7 @@ if mode == "🔍 Predict PID":
                     break
 
             if np.isnan(settling_time):
-                st.warning("⚠️ System never fully settles within ±5%.")
+                st.warning("⚠️ System never fully settles within ±2%.")
 
 
             # === Annotate on Plotly Figure ===
@@ -937,7 +937,7 @@ elif mode == "📊 Evaluate PID":
                 rise_time_true = np.nan
 
             try:
-                tolerance = 0.05 * final_val
+                tolerance = 0.02 * final_val
                 within_bounds = np.abs(y - final_val) <= tolerance
                 settling_time_true = t[-1]
                 for i in range(len(y)):
@@ -1340,7 +1340,7 @@ elif mode == "⚙️ Optimize PID":
                 rise_time_sim = np.nan
 
             # Settling Time (±5%)
-            tol = 0.05 * abs(y_sim[-1])
+            tol = 0.02 * abs(y_sim[-1])
             within_bounds = (y_sim >= 1.0 - tol) & (y_sim <= 1.0 + tol)
             settling_time_sim = np.nan
             for i in range(len(y_sim)):
@@ -1493,7 +1493,7 @@ elif mode == "⚙️ Optimize PID":
                                     candidate["RiseTime_sim"] = np.nan
 
                                 # Settling time (±5%)
-                                tol = 0.05 * abs(y_response[-1])
+                                tol = 0.02 * abs(y_response[-1])
                                 for i in range(len(y_response)):
                                     if np.all((y_response[i:] >= 1.0 - tol) & (y_response[i:] <= 1.0 + tol)):
                                         candidate["SettlingTime_sim"] = t_response[i]
