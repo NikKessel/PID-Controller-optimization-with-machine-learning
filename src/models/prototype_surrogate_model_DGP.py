@@ -39,10 +39,10 @@ df["RiseTime_log"] = np.log1p(df["RiseTime"])
 
 features = ["K", "T1", "T2", "L", "Kp", "Ki", "Kd"]
 target_config = {
-    "ISE_log": {"original": "ISE", "use_log": True},
+    "ISE_log": {"original": "ISE", "use_log": False},
     "Overshoot": {"original": "Overshoot", "use_log": False},
-    "SettlingTime_log": {"original": "SettlingTime", "use_log": True},
-    "RiseTime_log": {"original": "RiseTime", "use_log": True}
+    "SettlingTime_log": {"original": "SettlingTime", "use_log": False},
+    "RiseTime_log": {"original": "RiseTime", "use_log": False}
 }
 
 # === Fixed DGP Components ===
