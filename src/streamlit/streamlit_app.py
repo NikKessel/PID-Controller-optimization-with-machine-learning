@@ -118,33 +118,40 @@ if mode == "🔍 Predict PID":
 
     st.sidebar.markdown("**System Parameters**")
     K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=1.50)
-    T1 = st.sidebar.number_input("T1", min_value=0.1, max_value=50.0, value=2.0)
+    T1 = st.sidebar.number_input("T1", min_value=0.0, max_value=50.0, value=2.0)
     T2 = st.sidebar.number_input("T2", min_value=0.0, max_value=50.0, value=0.00)
     Td = st.sidebar.number_input("Td", min_value=0.0, max_value=5.0, value=0.50) 
-    w0 = st.sidebar.number_input("w0", min_value=0.1, max_value=10.0, value=1.0)
+    w0 = st.sidebar.number_input("w0", min_value=0.0, max_value=10.0, value=1.0)
     zeta = st.sidebar.number_input("zeta", min_value=0.0, max_value=1.0, value=0.5)
     Tchar = st.sidebar.number_input("Tchar", min_value=0.0, max_value=50.0, value=0.0)
     Family = st.sidebar.selectbox("Family", ["PT2_osc", "PT1PT2_existing", "IT1", "P"])
 
     st.sidebar.markdown("**Plot Settings**")
     t_max = st.sidebar.slider("Simulation Time [s]", 1, 300, 20, key="slider_t_max")
-    y_max = st.sidebar.slider("Y-Axis Max (Output)", 1.0, 5.0, 1.5, step=0.1, key="slider_y_max")
+    y_max = st.sidebar.slider("Y-Axis Max (Output)", 1.0, 50000.0, 1.5, step=0.1, key="slider_y_max")
 
 
     if st.button("🔍 Predict PID"):
         st.session_state.predict_clicked = True
-        ASSUME_LOG_TARGETS = True
+
+        import os, joblib, numpy as np, pandas as pd
+
+        # Where your models live
+        model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
+
+        # ==============================
+        # XGB helpers (self-contained)
+        # ==============================
+        ASSUME_LOG_TARGETS = True  # set False if you trained without log1p(target)
 
         # Family-specific feature layouts
         _FAMILY_FEATURES = {
-            # WITH tuning
             "with": {
                 "PT2_osc":         ["logK","logL1p","zeta","logw0p","wc","PhaseMargin","focus_balanced","focus_reference-tracking","focus_disturbance-rejection"],
                 "PT1PT2_existing": ["logK","logL1p","logT1p","logT2p","wc","PhaseMargin","focus_balanced","focus_reference-tracking","focus_disturbance-rejection"],
                 "IT1":             ["logK","logL1p","logT1p","wc","PhaseMargin","focus_balanced","focus_reference-tracking","focus_disturbance-rejection"],
                 "P":               ["logK","logL1p","wc","PhaseMargin","focus_balanced","focus_reference-tracking","focus_disturbance-rejection"],
             },
-            # WITHOUT tuning
             "without": {
                 "PT2_osc":         ["logK","logL1p","zeta","logw0p"],
                 "PT1PT2_existing": ["logK","logL1p","logT1p","logT2p"],
@@ -156,13 +163,12 @@ if mode == "🔍 Predict PID":
         def _log1p0(x: float) -> float:
             return float(np.log1p(max(0.0, x)))
 
-        def _build_row(Family: str, K, Td, T1, T2, w0, zeta, Tchar,
+        def _build_row(FamilySel: str, K, Td, T1, T2, w0, zeta, Tchar,
                     wc_default=3.0, pm_default=60, focus_default="balanced"):
             """Build both with/without-tuning feature rows. Returns (df_with, cols_with), (df_wo, cols_wo)."""
-            # base pool of features
             feats = {
                 "logK":      _log1p0(K),
-                "logL1p":    _log1p0(Td),   # Td is L
+                "logL1p":    _log1p0(Td),   # Td == L
                 "logT1p":    _log1p0(T1),
                 "logT2p":    _log1p0(T2),
                 "logw0p":    _log1p0(w0),
@@ -179,8 +185,8 @@ if mode == "🔍 Predict PID":
             if key in feats:
                 feats[key] = 1.0
 
-            cols_with = _FAMILY_FEATURES["with"][Family]
-            cols_wo   = _FAMILY_FEATURES["without"][Family]
+            cols_with = _FAMILY_FEATURES["with"][FamilySel]
+            cols_wo   = _FAMILY_FEATURES["without"][FamilySel]
 
             row_with = {c: feats.get(c, 0.0) for c in cols_with}
             row_wo   = {c: feats.get(c, 0.0) for c in cols_wo}
@@ -189,9 +195,9 @@ if mode == "🔍 Predict PID":
             df_wo   = pd.DataFrame([row_wo],   columns=cols_wo)
             return (df_with, cols_with), (df_wo, cols_wo)
 
-        def _load_family_model(model_dir: str, Family: str, target: str):
-            model_path  = os.path.join(model_dir, f"{Family}_{target}_xgb.pkl")
-            scaler_path = os.path.join(model_dir, f"{Family}_{target}_scaler.pkl")
+        def _load_family_model(model_dir: str, FamilySel: str, TargetSel: str):
+            model_path  = os.path.join(model_dir, f"{FamilySel}_{TargetSel}_xgb.pkl")
+            scaler_path = os.path.join(model_dir, f"{FamilySel}_{TargetSel}_scaler.pkl")
             if not os.path.exists(model_path):
                 raise FileNotFoundError(f"Missing model: {model_path}")
             if not os.path.exists(scaler_path):
@@ -200,766 +206,461 @@ if mode == "🔍 Predict PID":
             scaler = joblib.load(scaler_path)
             return model, scaler
 
-        def _predict_one(model, scaler, X_with, X_wo):
-            """Choose the right feature set based on scaler dimensionality."""
-            # Robust way to get expected n_features
+        def _predict_one(model, scaler, X_with, X_wo, assume_log_targets=True):
+            """
+            Choose the correct feature set (with/without tuning) based on scaler dimensionality,
+            scale, predict, and (optionally) invert log1p.
+            Returns: pred_value (float), debug (dict)
+            """
+            # Determine expected feature count
             n_expected = getattr(scaler, "n_features_in_", None)
             if n_expected is None:
-                # StandardScaler has mean_ vector
                 n_expected = getattr(scaler, "mean_", None)
                 n_expected = len(n_expected) if n_expected is not None else X_with.shape[1]
 
             if X_with.shape[1] == n_expected:
                 Xs = scaler.transform(X_with.values)
+                used = "with"; used_cols = list(X_with.columns)
             elif X_wo.shape[1] == n_expected:
                 Xs = scaler.transform(X_wo.values)
+                used = "without"; used_cols = list(X_wo.columns)
             else:
-                raise ValueError(f"Scaler expects {n_expected} features, but got "
-                                f"{X_with.shape[1]} (with) and {X_wo.shape[1]} (without).")
-
-            y_pred = model.predict(Xs)
-            if ASSUME_LOG_TARGETS:
-                y_pred = np.expm1(y_pred)
-            return float(np.clip(y_pred[0], 0, None))
-    
-        try:
-            model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
-
-            if model_choice in ["Random Forest", "MLP"]:
-                X = np.array([[K, T1, T2, Td]])
-
-            elif model_choice == "XGBoost":
-                # ---- helpers (keep them once, ideally move them above) ----
-                ASSUME_LOG_TARGETS = True
-
-                _FAMILY_FEATURES = {
-                    "with": {
-                        "PT2_osc":         ["logK","logL1p","zeta","logw0p","wc","PhaseMargin","focus_balanced","focus_reference-tracking","focus_disturbance-rejection"],
-                        "PT1PT2_existing": ["logK","logL1p","logT1p","logT2p","wc","PhaseMargin","focus_balanced","focus_reference-tracking","focus_disturbance-rejection"],
-                        "IT1":             ["logK","logL1p","logT1p","wc","PhaseMargin","focus_balanced","focus_reference-tracking","focus_disturbance-rejection"],
-                        "P":               ["logK","logL1p","wc","PhaseMargin","focus_balanced","focus_reference-tracking","focus_disturbance-rejection"],
-                    },
-                    "without": {
-                        "PT2_osc":         ["logK","logL1p","zeta","logw0p"],
-                        "PT1PT2_existing": ["logK","logL1p","logT1p","logT2p"],
-                        "IT1":             ["logK","logL1p","logT1p"],
-                        "P":               ["logK","logL1p"],
-                    }
-                }
-
-                def _log1p0(x: float) -> float:
-                    import numpy as _np
-                    return float(_np.log1p(max(0.0, x)))
-
-                def _build_row(FamilySel: str, K, Td, T1, T2, w0, zeta, Tchar,
-                            wc_default=3.0, pm_default=60, focus_default="balanced"):
-                    import pandas as _pd
-                    feats = {
-                        "logK":      _log1p0(K),
-                        "logL1p":    _log1p0(Td),   # Td == L
-                        "logT1p":    _log1p0(T1),
-                        "logT2p":    _log1p0(T2),
-                        "logw0p":    _log1p0(w0),
-                        "logTcharp": _log1p0(Tchar),
-                        "zeta":      float(zeta),
-                        "wc": float(wc_default),
-                        "PhaseMargin": float(pm_default),
-                        "focus_balanced": 0.0,
-                        "focus_reference-tracking": 0.0,
-                        "focus_disturbance-rejection": 0.0,
-                    }
-                    key = f"focus_{focus_default}"
-                    if key in feats:
-                        feats[key] = 1.0
-
-                    cols_with = _FAMILY_FEATURES["with"][FamilySel]
-                    cols_wo   = _FAMILY_FEATURES["without"][FamilySel]
-
-                    row_with = {c: feats.get(c, 0.0) for c in cols_with}
-                    row_wo   = {c: feats.get(c, 0.0) for c in cols_wo}
-
-                    df_with = _pd.DataFrame([row_with], columns=cols_with)
-                    df_wo   = _pd.DataFrame([row_wo],   columns=cols_wo)
-                    return (df_with, cols_with), (df_wo, cols_wo)
-
-                def _load_family_model(model_dir: str, FamilySel: str, TargetSel: str):
-                    import os as _os, joblib as _joblib
-                    model_path  = _os.path.join(model_dir, f"{FamilySel}_{TargetSel}_xgb.pkl")
-                    scaler_path = _os.path.join(model_dir, f"{FamilySel}_{TargetSel}_scaler.pkl")
-                    if not _os.path.exists(model_path):
-                        raise FileNotFoundError(f"Missing model: {model_path}")
-                    if not _os.path.exists(scaler_path):
-                        raise FileNotFoundError(f"Missing scaler: {scaler_path}")
-                    model  = _joblib.load(model_path)
-                    scaler = _joblib.load(scaler_path)
-                    return model, scaler
-
-                def _predict_one(model, scaler, X_with, X_wo):
-                    import numpy as _np
-                    # Figure out expected feature count
-                    n_expected = getattr(scaler, "n_features_in_", None)
-                    if n_expected is None:
-                        n_expected = getattr(scaler, "mean_", None)
-                        n_expected = len(n_expected) if n_expected is not None else X_with.shape[1]
-
-                    if X_with.shape[1] == n_expected:
-                        Xs = scaler.transform(X_with.values)
-                    elif X_wo.shape[1] == n_expected:
-                        Xs = scaler.transform(X_wo.values)
-                    else:
-                        raise ValueError(f"Scaler expects {n_expected} features, "
-                                        f"but got {X_with.shape[1]} (with) and {X_wo.shape[1]} (without).")
-
-                    y_pred = model.predict(Xs)
-                    if ASSUME_LOG_TARGETS:
-                        y_pred = _np.expm1(y_pred)
-                    return float(max(0.0, y_pred[0]))
-                # ---- end helpers ----
-
-                Family_choice = Family  # from your selectbox
-
-                # Build feature rows (you removed tuning, so we pass safe defaults)
-                (X_with, _), (X_wo, _) = _build_row(
-                    FamilySel=Family_choice,
-                    K=K, Td=Td, T1=T1, T2=T2, w0=w0, zeta=zeta, Tchar=Tchar,
-                    wc_default=3.0, pm_default=60, focus_default="balanced"
+                raise ValueError(
+                    f"Scaler expects {n_expected} features, but got "
+                    f"{X_with.shape[1]} (with) and {X_wo.shape[1]} (without)."
                 )
 
-                model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
+            raw_pred = model.predict(Xs)
+            pred = np.expm1(raw_pred) if assume_log_targets else raw_pred
 
-                preds = {}
-                for TargetSel in ["Kp", "Ki", "Kd"]:
-                    model, scaler = _load_family_model(model_dir, Family_choice, TargetSel)
-                    preds[TargetSel] = _predict_one(model, scaler, X_with, X_wo)
+            dbg = {
+                "expected_features": int(n_expected),
+                "used_set": used,
+                "used_cols": used_cols,
+                "Xs_shape": Xs.shape,
+                "raw_pred": float(raw_pred[0]),
+                "final_pred": float(pred[0]),
+            }
+            return float(max(0.0, pred[0])), dbg
 
-                # Optionally enforce trivial values
-                # if Family_choice == "P":
-                #     preds["Ki"] = 0.0
-                #     preds["Kd"] = 0.0
+        def predict_pid_gains_xgb(
+            model_dir: str,
+            Family: str,
+            K: float, T1: float, T2: float, Td: float, w0: float, zeta: float, Tchar: float,
+            assume_log_targets: bool = True,
+            debug: bool = False,
+        ):
+            # Build both feature variants; auto-pick per-scaler inside _predict_one
+            (X_with, _), (X_wo, _) = _build_row(
+                FamilySel=Family,
+                K=K, Td=Td, T1=T1, T2=T2, w0=w0, zeta=zeta, Tchar=Tchar,
+                wc_default=3.0, pm_default=60, focus_default="balanced"
+            )
 
-                Kp, Ki, Kd = preds["Kp"], preds["Ki"], preds["Kd"]
+            preds = {}
+            for TargetSel in ["Kp", "Ki", "Kd"]:
+                model, scaler = _load_family_model(model_dir, Family, TargetSel)
+                pred_val, dbg = _predict_one(model, scaler, X_with, X_wo, assume_log_targets)
 
-            def load_and_predict_symb(param, K, T1, T2):
-                try:
-                    import pysr
-                except ImportError:
-                    raise ImportError("⚠️ PySR is required to load symbolic models. Install with: `pip install pysr`")
+                if debug:
+                    st.write(f"🔄 {Family}-{TargetSel}: used={dbg['used_set']} | "
+                            f"expected={dbg['expected_features']} | Xs={dbg['Xs_shape']}")
+                    st.write(f"    cols={dbg['used_cols']}")
+                    st.write(f"    raw={dbg['raw_pred']:.6f} → final={dbg['final_pred']:.6f}")
 
-                model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
-                model = joblib.load(os.path.join(model_dir, f"symbolic_{param}.pkl"))
+                preds[TargetSel] = pred_val
 
-                # Only use the features you trained on
-                X = np.array([[K, T1, T2]])
-                st.write(f"🔍 [SYMB DEBUG] Input X.shape = {X.shape}, X = {X}")
+            # Optional: enforce trivial values for P
+            # if Family == "P":
+            #     preds["Ki"] = 0.0
+            #     preds["Kd"] = 0.0
 
-                assert X.shape[1] == 3, f"Expected 3 features for Symbolic model, got {X.shape[1]}"
-                # Predict log10-transformed output and invert it
-                y_log = model.predict(X)[0]
-                y = max(0.0, 10**y_log - 1e-6)
+            Kp = float(max(0.0, preds.get("Kp", 0.0)))
+            Ki = float(max(0.0, preds.get("Ki", 0.0)))
+            Kd = float(max(0.0, preds.get("Kd", 0.0)))
+            return Kp, Ki, Kd
 
-                # Debug print
-                st.write(f"📊 Symbolic prediction for **{param}**:")
-                st.write(f"- Raw log10 output: `{y_log:.4f}`")
-                st.write(f"- Inverted: `{y:.4f}`")
-                st.write(f"- Features: K={K}, T1={T1}, T2={T2}")
-
-                return y
-
-            import torch
-            from gpytorch.settings import fast_pred_var
-            class DGPModel(gpytorch.models.ApproximateGP):
-                def __init__(self, input_dim):
-                    inducing_points = torch.randn(256, input_dim)
-                    variational_distribution = gpytorch.variational.MeanFieldVariationalDistribution(inducing_points.size(0))
-                    variational_strategy = gpytorch.variational.VariationalStrategy(
-                        self, inducing_points, variational_distribution, learn_inducing_locations=True
-                    )
-                    super().__init__(variational_strategy)
-                    self.mean_module = gpytorch.means.ZeroMean()
-                    self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
-
-                def forward(self, x):
-                    mean = self.mean_module(x)
-                    covar = self.covar_module(x)
-                    return gpytorch.distributions.MultivariateNormal(mean, covar)
-
-
-
-            K_T1 = K * T1
-            K_T2 = K * T2
-            eps = 1e-8
-            T1_T2_ratio = T1 / (T2 + eps)
-
-            #X_raw = np.array([[K, T1, T2, K_T1, K_T2, T1_T2_ratio]])
-            X_raw = np.array([[K, T1, T2,Td]])
-
-            def load_and_predict_dgp(param, X_raw, return_std=False, return_all=False):
-                #base_path = os.path.join(os.path.dirname(__file__), "streamlit_models")
-
-                #base_path = os.path.join(os.getcwd(), "streamlit_models")
-                base_path = os.path.join(os.path.dirname(__file__), "streamlit_models")
-
-                #base_path = os.path.abspath(base_path)  # resolve relative path
-
-
-                # Method 2: Alternative - use path relative to the script file
-                # Uncomment this if Method 1 doesn't work
-                # base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "streamlit_models")
-                
-                # Method 3: For debugging - check if directory exists
-
-
-                #param = param[0].upper() + param[1:]  # Capitalize first letter: kp → Kp, ki → Ki, etc.
-                # Check if model files exist before loading
-
-                def find_existing_file(base_path, patterns):
-                    for pattern in patterns:
-                        path = os.path.join(base_path, pattern)
-                        if os.path.exists(path):
-                            return path
-                    return None
-
-                param_lower = param.lower()
-                param_cap = param.capitalize()
-
-                x_scaler_path = find_existing_file(base_path, [
-                    f"dgp_{param_lower}_scaler_X.pkl",
-                    f"dgp_{param_cap}_scaler_X.pkl"
-                ])
-
-                y_scaler_path = find_existing_file(base_path, [
-                    f"dgp_{param_lower}_scaler_y.pkl",
-                    f"dgp_{param_cap}_scaler_y.pkl"
-                ])
-
-                if not x_scaler_path or not y_scaler_path:
-                    raise FileNotFoundError("❌ Scaler file(s) not found")
-                #x_scaler_path = os.path.join(base_path, f"dgp_{param}_scaler_X.pkl")
-                #y_scaler_path = os.path.join(base_path, f"dgp_{param}_scaler_y.pkl")
-                
-
-
-                if not os.path.exists(x_scaler_path):
-                    raise FileNotFoundError(f"X scaler not found at: {x_scaler_path}")
-                if not os.path.exists(y_scaler_path):
-                    raise FileNotFoundError(f"Y scaler not found at: {y_scaler_path}")
-                X_scaler = joblib.load(x_scaler_path)
-                y_scaler = joblib.load(y_scaler_path)
-                param_lower = param.lower()
-                param_cap = param.capitalize()
-
-                model_path = os.path.join(base_path, f"dgp_{param_lower}.pth")
-                likelihood_path = os.path.join(base_path, f"dgp_{param_lower}_likelihood.pth")
-                #model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
-
-                # === Load scalers
-                #X_scaler = joblib.load(os.path.join(base_path, f"dgp_{param}_scaler_X.pkl"))
-                #y_scaler = joblib.load(os.path.join(base_path, f"dgp_{param}_scaler_y.pkl"))
-                #X_scaler = joblib.load(os.path.join(model_dir, f"dgp_{param}_scaler_X.pkl"))
-                #y_scaler = joblib.load(os.path.join(model_dir, f"dgp_{param}_scaler_y.pkl"))
-                # === Preprocess input
-                X_scaled = X_scaler.transform(X_raw)
-                X_tensor = torch.tensor(X_scaled, dtype=torch.float32)
-                print("y_scaler mean:", y_scaler.mean_)
-                print("y_scaler scale:", y_scaler.scale_)
-                # === Instantiate model and likelihood
-                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-                model = DGPModel(input_dim=X_tensor.shape[1])
-
-                #model = VariationalGP(X_train_tensor.shape[1]).to(device)
-                #likelihood = gpytorch.likelihoods.GaussianLikelihood()
-                # === Inference dummy noise (required by FixedNoise)
-                dummy_noise = torch.ones(X_tensor.size(0)) * 1e-4  # use same shape as X_tensor
-                likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=dummy_noise).to(device)
-
-                #likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(
-                #noise=torch.ones(X_train_tensor.size(0)).to(device) * 1e-4
-            #).to(device)
-                # === Load model weights
-                model.load_state_dict(torch.load(os.path.join(model_dir, f"dgp_{param_lower}.pth")))
-                #likelihood.load_state_dict(torch.load(os.path.join(model_dir, f"dgp_{param}_likelihood.pth")))
-                likelihood.load_state_dict(torch.load(os.path.join(model_dir, f"dgp_{param_lower}_likelihood.pth"), map_location=device))
-
-                model.eval()
-                likelihood.eval()
-
-                # === Inference
-                with torch.no_grad(), fast_pred_var():
-                    preds = likelihood(model(X_tensor))
-                    y_pred = preds.mean.item()
-                    y_std = preds.variance.sqrt().item() if return_std else None
-
-                # === Inverse transform prediction
-                y_pred_inv = y_scaler.inverse_transform(np.array([[y_pred]]))[0][0]
-                y_std_inv = None
-                if return_std:
-                    upper = y_scaler.inverse_transform(np.array([[y_pred + y_std]]))[0][0]
-                    lower = y_scaler.inverse_transform(np.array([[y_pred - y_std]]))[0][0]
-                    y_std_inv = abs(upper - lower) / 2
-
-                # === Debug info
-                #st.write(f"🔍 Scaled prediction for {param}: {y_pred:.4f}")
-                #if return_std:
-                    #st.write(f"📉 Scaled std: ±{y_std:.4f}")
-                #st.write(f"📈 Final prediction for {param}: {y_pred_inv:.6f}" + (f" ± {y_std_inv:.6f}" if return_std else ""))
-
-                # === Return structure
-                if return_all:
-                    return y_pred, y_pred_inv, y_std_inv
-                elif return_std:
-                    return {
-                        "mean": y_pred_inv,
-                        "std": y_std_inv
-                    }
-                else:
-                    return y_pred_inv
-
-
+        # ==============================
+        # Prediction branches
+        # ==============================
+        try:
             if model_choice in ["Random Forest", "MLP"]:
+                X = np.array([[K, T1, T2, Td]])
                 model_filename = f"model_{model_choice.lower().replace(' ', '_')}.joblib"
                 model_path = os.path.join(model_dir, model_filename)
                 model = joblib.load(model_path)
 
-                from utils.predict_pid import predict_pid_params
-
+                try:
+                    from utils.predict_pid import predict_pid_params
+                except Exception as e:
+                    st.error("⚠️ Could not import predict_pid_params from utils.predict_pid")
+                    raise
 
                 Kp, Ki, Kd = predict_pid_params(model, X)
 
             elif model_choice == "XGBoost":
-                    # Build filenames
-                model_filename = f"{family}_{target}_xgb.pkl"
-                scaler_filename = f"{family}_{target}_scaler.pkl"
-                
-                # Paths
-                model_path = os.path.join(model_dir, model_filename)
-                scaler_path = os.path.join(model_dir, scaler_filename)
-
-                # Load
-                model = joblib.load(model_path)
-                scaler = joblib.load(scaler_path)
-
-                Kp, Ki, Kd = predict_pid_params(model, X)
+                DEBUG_XGB = st.sidebar.checkbox("Debug XGBoost", value=False)
+                Kp, Ki, Kd = predict_pid_gains_xgb(
+                    model_dir=model_dir,
+                    Family=Family,
+                    K=K, T1=T1, T2=T2, Td=Td, w0=w0, zeta=zeta, Tchar=Tchar,
+                    assume_log_targets=ASSUME_LOG_TARGETS,
+                    debug=DEBUG_XGB,
+                )
 
             elif model_choice == "Symbolic":
+                # Minimal safe loader for symbolic (expects you trained with log10 target and invert with 10**y - 1e-6)
+                def load_and_predict_symb(param, K, T1, T2):
+                    import numpy as _np
+                    try:
+                        model = joblib.load(os.path.join(model_dir, f"symbolic_{param}.pkl"))
+                    except Exception as _e:
+                        raise FileNotFoundError(f"symbolic_{param}.pkl not found in {model_dir}")
+                    Xs = np.array([[K, T1, T2]])
+                    y_log = model.predict(Xs)[0]
+                    return max(0.0, 10**y_log - 1e-6)
+
                 Kp = load_and_predict_symb("kp", K, T1, T2)
                 Ki = load_and_predict_symb("ki", K, T1, T2)
                 Kd = load_and_predict_symb("kd", K, T1, T2)
 
             elif model_choice == "DGP":
+                # Minimal, fixed-path DGP loader (uses base_path consistently)
+                import torch, gpytorch
+                from gpytorch.settings import fast_pred_var
+
+                class DGPModel(gpytorch.models.ApproximateGP):
+                    def __init__(self, input_dim):
+                        inducing_points = torch.randn(256, input_dim)
+                        variational_distribution = gpytorch.variational.MeanFieldVariationalDistribution(inducing_points.size(0))
+                        variational_strategy = gpytorch.variational.VariationalStrategy(
+                            self, inducing_points, variational_distribution, learn_inducing_locations=True
+                        )
+                        super().__init__(variational_strategy)
+                        self.mean_module = gpytorch.means.ZeroMean()
+                        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+
+                    def forward(self, x):
+                        mean = self.mean_module(x)
+                        covar = self.covar_module(x)
+                        return gpytorch.distributions.MultivariateNormal(mean, covar)
+
+                def load_and_predict_dgp(param, X_raw, return_std=False):
+                    base_path = model_dir  # keep consistent
+                    x_scaler_path = os.path.join(base_path, f"dgp_{param.lower()}_scaler_X.pkl")
+                    y_scaler_path = os.path.join(base_path, f"dgp_{param.lower()}_scaler_y.pkl")
+                    if not os.path.exists(x_scaler_path) or not os.path.exists(y_scaler_path):
+                        raise FileNotFoundError(f"DGP scalers for {param} not found in {base_path}")
+                    X_scaler = joblib.load(x_scaler_path)
+                    y_scaler = joblib.load(y_scaler_path)
+
+                    X_scaled = X_scaler.transform(X_raw)
+                    X_tensor = torch.tensor(X_scaled, dtype=torch.float32)
+
+                    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                    model = DGPModel(input_dim=X_tensor.shape[1]).to(device)
+                    dummy_noise = torch.ones(X_tensor.size(0)).to(device) * 1e-4
+                    likelihood = gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=dummy_noise).to(device)
+
+                    model.load_state_dict(torch.load(os.path.join(base_path, f"dgp_{param.lower()}.pth"), map_location=device))
+                    likelihood.load_state_dict(torch.load(os.path.join(base_path, f"dgp_{param.lower()}_likelihood.pth"), map_location=device))
+
+                    model.eval(); likelihood.eval()
+                    with torch.no_grad(), fast_pred_var():
+                        preds = likelihood(model(X_tensor))
+                        y_pred = preds.mean.item()
+                        y_std = preds.variance.sqrt().item() if return_std else None
+
+                    y_pred_inv = y_scaler.inverse_transform(np.array([[y_pred]]))[0][0]
+                    if return_std:
+                        upper = y_scaler.inverse_transform(np.array([[y_pred + y_std]]))[0][0]
+                        lower = y_scaler.inverse_transform(np.array([[y_pred - y_std]]))[0][0]
+                        return {"mean": y_pred_inv, "std": abs(upper - lower) / 2}
+                    return y_pred_inv
+
+                X_raw = np.array([[K, T1, T2, Td]])
                 Kp = load_and_predict_dgp("kp", X_raw)
                 Ki = load_and_predict_dgp("ki", X_raw)
                 Kd = load_and_predict_dgp("kd", X_raw)
-                Kp_result = load_and_predict_dgp("Kp", X_raw, return_std=True)
-                Ki_result = load_and_predict_dgp("Ki", X_raw, return_std=True)
-                Kd_result = load_and_predict_dgp("Kd", X_raw, return_std=True)
-
 
             else:
                 st.error("❌ Unknown model type selected.")
                 raise ValueError("Invalid model")
 
-            # only reached if prediction successful:
-            st.success("✅ Prediction complete!")
-            Kp_ml, Ki_ml, Kd_ml = Kp, Ki, Kd
+            # === Success & display ===
+                    # === Predict (already done above) ===
+            try:
+                # Kp, Ki, Kd must be set by your model branches before this point
+                Kp_ml, Ki_ml, Kd_ml = float(Kp), float(Ki), float(Kd)
+                pred_ok = True
+            except Exception as e:
+                st.error(f"❌ Prediction failed: {e}")
+                pred_ok = False
 
-
-            # === Extract predicted values
-            #Kp_ml, Ki_ml, Kd_ml = Kp_result["mean"], Ki_result["mean"], Kd_result["mean"]
-            #Kp_std, Ki_std, Kd_std = Kp_result["std"], Ki_result["std"], Kd_result["std"]
-            if model_choice == "DGP":
-                Kp_ml, Ki_ml, Kd_ml = Kp_result["mean"], Ki_result["mean"], Kd_result["mean"]
-                Kp_std, Ki_std, Kd_std = Kp_result["std"], Ki_result["std"], Kd_result["std"]
-                Kp_str = f"{Kp_ml:.3f} ± {Kp_std:.3f}"
-                Ki_str = f"{Ki_ml:.5f} ± {Ki_std:.5f}"
-                Kd_str = f"{Kd_ml:.2f} ± {Kd_std:.2f}"
-            else:
-                Kp_ml, Ki_ml, Kd_ml = Kp, Ki, Kd
+            if pred_ok:
+                # === Success & display ===
+                st.success("✅ Prediction complete!")
                 Kp_str = f"{Kp_ml:.3f}"
                 Ki_str = f"{Ki_ml:.5f}"
                 Kd_str = f"{Kd_ml:.2f}"
 
-            # === Display metrics
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Kp", Kp_str)
-            col2.metric("Ki", Ki_str)
-            col3.metric("Kd", Kd_str)
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Kp", Kp_str)
+                col2.metric("Ki", Ki_str)
+                col3.metric("Kd", Kd_str)
 
+                # =========================
+                # Simulation & visualization
+                # =========================
+                import numpy as _np
+                import plotly.graph_objects as go
+                from scipy.integrate import simpson
+                # control library
+                from control.matlab import tf, feedback, step as step_response
+                from control import pade
+                # ---------- Plant per Family ----------
+                def plant_tf(Family, K, T1, T2, w0, zeta, Tchar, L):
+                    """
+                    Returns continuous-time plant transfer function for the selected Family.
+                    Adds 1st-order Pade delay if L>0.
+                    """
+                    # Ensure positive-ish parameters to avoid singularities
+                    K  = float(K)
+                    T1 = float(max(T1, 1e-9))
+                    T2 = float(max(T2, 0.0))
+                    w0 = float(max(w0, 1e-9))
+                    zeta = float(max(zeta, 0.0))
+                    L  = float(max(L, 0.0))
 
+                    if Family == "PT1PT2_existing":
+                        den = _np.polymul([T1, 1], [T2, 1]) if T2 > 0 else [T1, 1]
+                        G = tf([K], den)
 
-            # --- Real simulation ---
+                    elif Family == "PT2_osc":
+                        # K * ω0^2 / (s^2 + 2ζω0 s + ω0^2)
+                        G = tf([K * (w0**2)], [1.0, 2.0*zeta*w0, w0**2])
 
-            # --- Simulate system response ---
-            def simulate_response(K, T1, T2, L, Kp, Ki, Kd, T_final=100):
-                t = np.linspace(0, T_final, 1000)
-                den = np.polymul([T1, 1], [T2, 1]) if T2 > 0 else [T1, 1]
-                G = tf([K], den)
-                if L > 0:
-                    num_d, den_d = pade(L, 1)
-                    G = G * tf(num_d, den_d)
-                s = tf([1, 0], [1])
-                C = Kp + Ki/s + Kd*s
-                sys = feedback(C * G, 1)
-                t, y = step_response(sys, T=t)
-                return t, y
+                    elif Family == "IT1":
+                        # IT1: K / (s*(T1 s + 1))
+                        # denominator = s * (T1 s + 1) = T1 s^2 + s
+                        G = tf([K], _np.polymul([T1, 1], [1, 0]))
 
-            def zn_pid(K, T1, T2, L):
-                T = T1 + T2 if T2 > 0 else T1
-                Kp = 1.2 * T / (K * L)
-                Ti = 2 * L
-                Td = 0.5* L
-                Ki = Kp / Ti
-                Kd = Kp * Td
-                return Kp, Ki, Kd
-            def chr_pid(K, T1, T2, L, overshoot=0):
-                T = T1 + T2 if T2 > 0 else T1
-                if overshoot == 0:
-                    Kp = 0.6 * T / (K * L)
-                    Ti = L
-                    Td = 0.5 * L
-                else:
-                    Kp = 0.95 * T / (K * L)
-                    Ti = 1.35 * L
-                    Td = 0.47 * L
-                Ki = Kp / Ti
-                Kd = Kp * Td
-                return Kp, Ki, Kd
+                    elif Family == "P":
+                        # Pure gain + optional delay
+                        G = tf([K], [1.0])
 
-            # === Use Predicted PID ===
-            L = Td  # clarity
-            Kp_ml, Ki_ml, Kd_ml = Kp, Ki, Kd
-            Kp_zn, Ki_zn, Kd_zn = zn_pid(K, T1, T2, L)
-            Kp_chr0, Ki_chr0, Kd_chr0 = chr_pid(K, T1, T2, L, overshoot=0)
-            Kp_chr20, Ki_chr20, Kd_chr20 = chr_pid(K, T1, T2, L, overshoot=20)
+                    else:
+                        # Fallback: PT1/PT2
+                        den = _np.polymul([T1, 1], [T2, 1]) if T2 > 0 else [T1, 1]
+                        G = tf([K], den)
 
-            # === Simulate Step Responses ===
-            t_ml, y_ml = simulate_response(K, T1, T2, L, Kp_ml, Ki_ml, Kd_ml, T_final=t_max)
-            t_zn, y_zn = simulate_response(K, T1, T2, L, Kp_zn, Ki_zn, Kd_zn, T_final=t_max)
-            t_chr0, y_chr0 = simulate_response(K, T1, T2, L, Kp_chr0, Ki_chr0, Kd_chr0, T_final=t_max)
-            t_chr20, y_chr20 = simulate_response(K, T1, T2, L, Kp_chr20, Ki_chr20, Kd_chr20, T_final=t_max)
+                    if L > 0:
+                        num_d, den_d = pade(L, 1)
+                        G = G * tf(num_d, den_d)
 
-            # === Debug Print for PID parameters ===
-            #st.markdown("### 🔧 PID Parameter Debug")
-            #st.markdown("### 📐 Calculation Breakdown")
+                    return G
 
-            T_eff = T1 + T2 if T2 > 0 else T1
-            with st.expander("🔧 Show Calculation Details"):
+                # ---------- Controller & closed loop ----------
+                def simulate_response(Family, K, T1, T2, L, w0, zeta, Tchar, Kp, Ki, Kd, T_final=100):
+                    """Build plant per family, close loop with PID, return unit-step response."""
+                    t = _np.linspace(0, T_final, 1000)
+                    G = plant_tf(Family, K, T1, T2, w0, zeta, Tchar, L)
 
-                st.code(f"""
-                🔧 Effective Time Constant:
-                    T = T1 + T2 = {T1:.3f} + {T2:.3f} = {T_eff:.3f}
+                    s = tf([1, 0], [1])
+                    #C = Kp + Ki / s + Kd * s
+                    N = 20.0
+                    D_f = Kd * (N*s) / (1 + N*s)
+                    C  = Kp + Ki/s + D_f
+                    sys = feedback(C * G, 1)         # unity feedback
+                    y, t = step_response(sys, T=t)    # unit step reference
+                    return t, y
 
-                === Ziegler–Nichols ===
-                Kp = 1.2 × T / (K × L) = 1.2 × {T_eff:.3f} / ({K:.3f} × {L:.3f}) = {Kp_zn:.4f}
-                Ti = 2 × L = 2 × {L:.3f} = {2 * L:.4f}
-                Td = 0.5 × L = 0.5 × {L:.3f} = {0.5 * L:.4f}
-                Ki = Kp / Ti = {Kp_zn:.4f} / {2 * L:.4f} = {Ki_zn:.4f}
-                Kd = Kp × Td = {Kp_zn:.4f} × {0.5 * L:.4f} = {Kd_zn:.4f}
+                # ---------- FOPDT rules (only when applicable) ----------
+                def _safe_div(x, eps=1e-9): 
+                    return x if abs(x) > eps else (eps if x >= 0 else -eps)
 
-                === CHR (0% Overshoot) ===
-                Kp = 0.6 × T / (K × L) = 0.6 × {T_eff:.3f} / ({K:.3f} × {L:.3f}) = {Kp_chr0:.4f}
-                Ti = L = {L:.3f}
-                Td = 0.5 × L = {0.5 * L:.4f}
-                Ki = Kp / Ti = {Kp_chr0:.4f} / {L:.4f} = {Ki_chr0:.4f}
-                Kd = Kp × Td = {Kp_chr0:.4f} × {0.5 * L:.4f} = {Kd_chr0:.4f}
+                def zn_pid(K, T1, T2, L):
+                    # ZN for FOPDT-ish: use T = T1+T2; requires L>0
+                    T = T1 + T2 if T2 > 0 else T1
+                    Ls = _safe_div(L)
+                    Kp = 1.2 * T / _safe_div(K * Ls)
+                    Ti = 2.0 * Ls
+                    Td = 0.5 * Ls
+                    Ki = Kp / _safe_div(Ti)
+                    Kd = Kp * Td
+                    return Kp, Ki, Kd
 
-                === CHR (20% Overshoot) ===
-                Kp = 0.95 × T / (K × L) = 0.95 × {T_eff:.3f} / ({K:.3f} × {L:.3f}) = {Kp_chr20:.4f}
-                Ti = 1.35 × L = 1.35 × {L:.3f} = {1.35 * L:.4f}
-                Td = 0.47 × L = 0.47 × {L:.3f} = {0.47 * L:.4f}
-                Ki = Kp / Ti = {Kp_chr20:.4f} / {1.35 * L:.4f} = {Ki_chr20:.4f}
-                Kd = Kp × Td = {Kp_chr20:.4f} × {0.47 * L:.4f} = {Kd_chr20:.4f}
-                """, language="text")
-            with st.expander("🔧 Show Parameters"):
+                def chr_pid(K, T1, T2, L, overshoot=0):
+                    # CHR for FOPDT-ish; requires L>0
+                    T = T1 + T2 if T2 > 0 else T1
+                    Ls = _safe_div(L)
+                    if overshoot == 0:
+                        Kp = 0.6 * T / _safe_div(K * Ls)
+                        Ti = 1.0 * Ls
+                        Td = 0.5 * Ls
+                    else:
+                        Kp = 0.95 * T / _safe_div(K * Ls)
+                        Ti = 1.35 * Ls
+                        Td = 0.47 * Ls
+                    Ki = Kp / _safe_div(Ti)
+                    Kd = Kp * Td
+                    return Kp, Ki, Kd
 
-                st.code(f"""
-                🔍 Input Parameters:
-                    K  = {K:.3f}
-                    T1 = {T1:.3f}
-                    T2 = {T2:.3f}
-                    L  = {L:.3f}
+                # === Use Predicted PID ===
+                L = Td  # clarity
+                Kp_ml, Ki_ml, Kd_ml = Kp, Ki, Kd
 
-                📊 ML Predicted:
-                    Kp = {Kp_ml:.4f}
-                    Ki = {Ki_ml:.4f}
-                    Kd = {Kd_ml:.4f}
+                # Baselines only for FOPDT-like families with L>0 and T1>0
+                baselines = {}
+                if Family in {"PT1PT2_existing"} and (L > 0.0) and (T1 > 0.0):
+                    baselines["ZN"]      = zn_pid(K, T1, T2, L)
+                    baselines["CHR 0%"]  = chr_pid(K, T1, T2, L, overshoot=0)
+                    baselines["CHR 20%"] = chr_pid(K, T1, T2, L, overshoot=20)
+                # For PT2_osc / IT1 / P we intentionally skip ZN/CHR (not meaningful)
 
-                📊 Ziegler-Nichols:
-                    Kp = {Kp_zn:.4f}
-                    Ki = {Ki_zn:.4f}
-                    Kd = {Kd_zn:.4f}
+                # === Simulate ===
+                t_ml, y_ml = simulate_response(Family, K, T1, T2, L, w0, zeta, Tchar, Kp_ml, Ki_ml, Kd_ml, T_final=t_max)
+                sims = {"ML": (t_ml, y_ml)}
 
-                📊 CHR (0% Overshoot):
-                    Kp = {Kp_chr0:.4f}
-                    Ki = {Ki_chr0:.4f}
-                    Kd = {Kd_chr0:.4f}
+                for label, (Kp_b, Ki_b, Kd_b) in baselines.items():
+                    t_b, y_b = simulate_response(Family, K, T1, T2, L, w0, zeta, Tchar, Kp_b, Ki_b, Kd_b, T_final=t_max)
+                    sims[label] = (t_b, y_b)
 
-                📊 CHR (20% Overshoot):
-                    Kp = {Kp_chr20:.4f}
-                    Ki = {Ki_chr20:.4f}
-                    Kd = {Kd_chr20:.4f}
-                """, language="text")
+                # === Calculation details expander (show only what exists) ===
+                T_eff = T1 + (T2 if T2 > 0 else 0.0)
+                with st.expander("🔧 Show Calculation Details"):
+                    lines = [f"Effective time constant T ≈ {T_eff:.3f} s (heuristic)"]
+                    if "ZN" in baselines:
+                        Kp_zn, Ki_zn, Kd_zn = baselines["ZN"]
+                        lines += [
+                            "",
+                            "=== Ziegler–Nichols (FOPDT) ===",
+                            f"Kp = {Kp_zn:.6f}",
+                            f"Ki = {Ki_zn:.6f}",
+                            f"Kd = {Kd_zn:.6f}",
+                        ]
+                    if "CHR 0%" in baselines:
+                        Kp_chr0, Ki_chr0, Kd_chr0 = baselines["CHR 0%"]
+                        lines += [
+                            "",
+                            "=== CHR (0% OS) ===",
+                            f"Kp = {Kp_chr0:.6f}",
+                            f"Ki = {Ki_chr0:.6f}",
+                            f"Kd = {Kd_chr0:.6f}",
+                        ]
+                    if "CHR 20%" in baselines:
+                        Kp_chr20, Ki_chr20, Kd_chr20 = baselines["CHR 20%"]
+                        lines += [
+                            "",
+                            "=== CHR (20% OS) ===",
+                            f"Kp = {Kp_chr20:.6f}",
+                            f"Ki = {Ki_chr20:.6f}",
+                            f"Kd = {Kd_chr20:.6f}",
+                        ]
+                    st.code("\n".join(lines), language="text")
 
+                with st.expander("🔧 Show Parameters"):
+                    st.code(f"""
+                    🔍 Inputs:
+                        Family = {Family}
+                        K  = {K:.3f}
+                        T1 = {T1:.3f}
+                        T2 = {T2:.3f}
+                        L  = {L:.3f}
+                        w0 = {w0:.3f}
+                        ζ   = {zeta:.3f}
+                        Tchar = {Tchar:.3f}
 
-            # === Plot Step Responses ===
-            #st.markdown("### Step Response")
-            #fig, ax = plt.subplots(figsize=(7, 4))
-            #ax.plot(t_ml, y_ml, label="ML Predicted PID", linewidth=2)
-            #ax.plot(t_zn, y_zn, '--', label="Ziegler–Nichols")
-            #ax.plot(t_chr0, y_chr0, ":", label="CHR (0% OS)")
-            #ax.plot(t_chr20, y_chr20, "-.", label="CHR (20% OS)")
-            #ax.plot(t_ml, np.ones_like(t_ml)*K, "k--", label=f"Step Input ({1:.2f})")
-            step_input = np.ones_like(t_ml)
-            step_input[t_ml < 0.01] = 0  # Optional: simulate visible step
-            #ax.plot(t_ml, step_input, "k--", label="Step Input (0 → 1)")
+                    📊 ML-PID:
+                        Kp = {Kp_ml:.6f}
+                        Ki = {Ki_ml:.6f}
+                        Kd = {Kd_ml:.6f}
+                    """, language="text")
 
-            #ax.set_xlabel("Time [s]")
-            #ax.set_ylabel("Output")
-            #ax.set_title("Closed-Loop Step Response")
-            #ax.set_ylim(0, y_max)
-            #ax.grid(True)
-            #ax.legend()
-            #st.pyplot(fig)
+                # === Plot Step Responses ===
+                ref = 1.0  # unit step
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=t_ml, y=y_ml, mode='lines', name='ML PID'))
+                for label, (t_b, y_b) in sims.items():
+                    if label == "ML": 
+                        continue
+                    style = dict(dash='dash') if "ZN" in label else dict(dash='dot')
+                    fig.add_trace(go.Scatter(x=t_b, y=y_b, mode='lines', name=label, line=style))
+                fig.add_trace(go.Scatter(x=t_ml, y=_np.ones_like(t_ml)*ref, mode='lines',
+                                        name='Step Input (0→1)', line=dict(color='black', dash='dash')))
 
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=t_ml, y=y_ml, mode='lines', name='ML Predicted PID'))
-            fig.add_trace(go.Scatter(x=t_zn, y=y_zn, mode='lines', name='Ziegler–Nichols', line=dict(dash='dash')))
-            fig.add_trace(go.Scatter(x=t_chr0, y=y_chr0, mode='lines', name='CHR (0% OS)', line=dict(dash='dot')))
-            fig.add_trace(go.Scatter(x=t_chr20, y=y_chr20, mode='lines', name='CHR (20% OS)', line=dict(dash='dashdot')))
-            fig.add_trace(go.Scatter(x=t_ml, y=step_input, mode='lines', name='Step Input (0 → 1)', line=dict(color='black', dash='dash')))
-
-            fig.update_layout(
-                title="Closed-Loop Step Response",
-                xaxis=dict(
-                    title="Time [s]",
-                    tickmode='linear',
-                    tick0=0,
-                    dtick=1,  # smaller time steps (e.g. 0.5 if you want more granularity)
-                ),
-                yaxis=dict(
-                    title="Output",
-                    tickmode='linear',
-                    tick0=0,
-                    dtick=0.2,  # finer vertical spacing
-                    range=[0, y_max],  # y_max as defined earlier
-                ),
-                legend=dict(
-                    x=1,
-                    y=0,
-                    xanchor='right',
-                    yanchor='bottom',
-                    orientation='v',  # vertical legend, you can also use 'h'
-                    bgcolor='rgba(255,255,255,0.8)',
-                    bordercolor='black',
-                    borderwidth=1
-                ),
-                template='plotly_white'
-            )
-            def compute_ise(t, y):
-                e = 1.0 - y  # step input is 1
-                ise = simpson(e**2, t)
-                return ise
-
-            def compute_metrics(t, y, label=""):
-                # === Rise Time (10% to 90%)
-                try:
-                    t_10 = t[np.where(y >= 0.1 * y[-1])[0][0]]
-                    t_90 = t[np.where(y >= 0.9 * y[-1])[0][0]]
-                    rise_time = t_90 - t_10
-                except IndexError:
-                    rise_time = np.nan
-
-                # === Settling Time (±5% band)
-                final_val = y[-1]
-                tol = 0.02 * abs(final_val)
-                lower = final_val - tol
-                upper = final_val + tol
-
-                within_bounds = (y >= lower) & (y <= upper)
-                settling_time = np.nan
-                for i in range(len(y)):
-                    if np.all(within_bounds[i:]):
-                        settling_time = t[i]
-                        break
-
-                # === Overshoot
-                overshoot = max(0.0, (np.max(y) - 1.0) * 100)
-                ise = compute_ise(t, y)
-
-                return rise_time, settling_time, overshoot, ise
-
-            # === Collect Metrics ===
-            metrics = {}
-            #metrics["ML"] = compute_metrics(t_ml, y_ml)
-            #metrics["ZN"] = compute_metrics(t_zn, y_zn)
-            #metrics["CHR 0%"] = compute_metrics(t_chr0, y_chr0)
-            #metrics["CHR 20%"] = compute_metrics(t_chr20, y_chr20)
-            metrics = {}
-            for label, (t, y) in {
-                "ML": (t_ml, y_ml),
-                "ZN": (t_zn, y_zn),
-                "CHR 0%": (t_chr0, y_chr0),
-                "CHR 20%": (t_chr20, y_chr20)
-            }.items():
-                rt, stt, os, ise = compute_metrics(t, y)
-                metrics[label] = (rt, stt, os, ise)
-
-
-            metric_rows = []
-            for label, (rt, stt, os, ise) in metrics.items():
-                metric_rows.append({
-                    "Controller": label,
-                    "Rise Time [s]": f"{rt:.2f}" if not np.isnan(rt) else "—",
-                    "Settling Time [s]": f"{stt:.2f}" if not np.isnan(stt) else "—",
-                    "Overshoot [%]": f"{os:.2f}" if not np.isnan(os) else "—",
-                    "ISE": f"{ise:.3f}" if not np.isnan(ise) else "—"
-
-                })
-
-            df_metrics = pd.DataFrame(metric_rows)
-
-            # === Display as nice table ===
-            st.markdown("### 📊 Key Performance Metrics (All Controllers)")
-            st.table(df_metrics)
-            # === Metric Extraction ===
-            # Rise Time
-            try:
-                t_10 = t_ml[np.where(y_ml >= 0.1)[0][0]]
-                t_90 = t_ml[np.where(y_ml >= 0.9)[0][0]]
-                rise_time = t_90 - t_10
-            except IndexError:
-                rise_time = np.nan
-
-
-            # Overshoot
-            overshoot_val = (np.max(y_ml) - 1.0) * 100
-            overshoot_time = t_ml[np.argmax(y_ml)] if np.max(y_ml) > 1 else np.nan
-
-            # Settling Time (within ±2%)
-            #within_bounds = np.abs(y_ml - 1.0) < 0.02
-            #settling_time = t_ml[np.where(within_bounds)[-1][-1]] if np.any(within_bounds) else np.nan
-            final_val = y_ml[-1]
-            tol = 0.02 * abs(final_val)
-            lower_bound = final_val - tol
-            upper_bound = final_val + tol
-
-            # Debug info
-            #st.code(f"""
-            #Final Value Estimate: {final_val:.4f}
-            #Tolerance (±5%): ±{tol:.4f}
-            #Acceptable Range: [{lower_bound:.4f}, {upper_bound:.4f}]
-            #""")
-
-            within_bounds = (y_ml >= lower_bound) & (y_ml <= upper_bound)
-
-            # Find the last time index after which the signal always stays within bounds
-            settling_time = np.nan
-            for i in range(len(y_ml)):
-                if np.all(within_bounds[i:]):
-                    settling_time = t_ml[i]
-                    #st.code(f"Settling starts at index {i}, time = {settling_time:.4f}s")
-                    break
-
-            if np.isnan(settling_time):
-                st.warning("⚠️ System never fully settles within ±2%.")
-
-
-            # === Annotate on Plotly Figure ===
-            if not np.isnan(rise_time):
-                fig.add_vline(
-                    x=rise_time,
-                    line_width=2, line_dash="dot", line_color="green",
-                    annotation_text="Rise Time", annotation_position="top right"
+                fig.update_layout(
+                    title="Closed-Loop Step Response",
+                    xaxis=dict(title="Time [s]", tickmode='linear', tick0=0, dtick=1),
+                    yaxis=dict(title="Output", tickmode='linear', tick0=0, dtick=0.2, range=[0, y_max]),
+                    legend=dict(x=1, y=0, xanchor='right', yanchor='bottom', orientation='v',
+                                bgcolor='rgba(255,255,255,0.8)', bordercolor='black', borderwidth=1),
+                    template='plotly_white'
                 )
 
-            if not np.isnan(settling_time):
-                fig.add_vline(
-                    x=settling_time,
-                    line_width=2, line_dash="dot", line_color="orange",
-                    annotation_text="Settling Time", annotation_position="top right"
-                )
+                # === Metrics (relative to unit step ref = 1.0) ===
+                def compute_ise(t, y, ref=1.0):
+                    e = ref - y
+                    return simpson(e**2, t)
 
-            if not np.isnan(overshoot_time):
-                fig.add_trace(go.Scatter(
-                    x=[overshoot_time], y=[np.max(y_ml)],
-                    mode="markers+text",
-                    name="Overshoot",
-                    text=["Overshoot"],
-                    textposition="bottom center",
-                    marker=dict(size=10, color="red")
-                ))
+                def compute_metrics(t, y, ref=1.0):
+                    # Rise time (10%->90% of ref)
+                    try:
+                        t_10 = t[_np.where(y >= 0.1 * ref)[0][0]]
+                        t_90 = t[_np.where(y >= 0.9 * ref)[0][0]]
+                        rise_time = t_90 - t_10
+                    except IndexError:
+                        rise_time = _np.nan
+                    # Settling (±2% of ref)
+                    band = 0.02 * abs(ref)
+                    lower, upper = ref - band, ref + band
+                    within = (y >= lower) & (y <= upper)
+                    settling_time = _np.nan
+                    for i in range(len(y)):
+                        if _np.all(within[i:]):
+                            settling_time = t[i]
+                            break
+                    # Overshoot relative to ref
+                    overshoot = max(0.0, (float(y.max()) - ref) / max(1e-9, abs(ref)) * 100.0)
+                    ise = compute_ise(t, y, ref=ref)
+                    return rise_time, settling_time, overshoot, ise
 
-            # === Add Zoom Slider ===
-            #fig.update_layout(
-                #xaxis=dict(rangeslider=dict(visible=True))
-            #)
+                metrics = {}
+                for label, (t, y) in sims.items():
+                    metrics[label] = compute_metrics(t, y, ref=ref)
 
-            # === Optional: Metric Summary Below Plot ===
+                metric_rows = [{
+                    "Controller": lbl,
+                    "Rise Time [s]": f"{rt:.2f}" if not _np.isnan(rt) else "—",
+                    "Settling Time [s]": f"{stt:.2f}" if not _np.isnan(stt) else "—",
+                    "Overshoot [%]": f"{os:.2f}" if not _np.isnan(os) else "—",
+                    "ISE": f"{ise:.3f}" if not _np.isnan(ise) else "—",
+                } for lbl, (rt, stt, os, ise) in metrics.items()]
 
+                st.markdown("### 📊 Key Performance Metrics (All Controllers)")
+                st.table(pd.DataFrame(metric_rows))
 
-            st.plotly_chart(fig, use_container_width=True)
+                # Annotate rise & settling for ML curve
+                rt_ml, st_ml, os_ml, _ = metrics["ML"]
+                if not _np.isnan(rt_ml):
+                    fig.add_vline(x=rt_ml, line_width=2, line_dash="dot", line_color="green",
+                                annotation_text="Rise Time", annotation_position="top right")
+                if not _np.isnan(st_ml):
+                    fig.add_vline(x=st_ml, line_width=2, line_dash="dot", line_color="orange",
+                                annotation_text="Settling Time", annotation_position="top right")
 
-        except Exception as e:
-            st.error(f"❌ Prediction failed: {e}")
-            Kp_ml = Ki_ml = Kd_ml = None  # prevent downstream crash
-            
-            def compute_and_plot_control_effort(K, T1, T2, Td, Kp, Ki, Kd, T_final=100, N=1000):
-                # Time vector
-                t = np.linspace(0, T_final, N)
-                dt = t[1] - t[0]
+                # Overshoot marker for ML
+                if y_ml.max() > ref:
+                    fig.add_trace(go.Scatter(
+                        x=[t_ml[_np.argmax(y_ml)]], y=[float(y_ml.max())],
+                        mode="markers+text", name="Overshoot", text=["Overshoot"],
+                        textposition="bottom center", marker=dict(size=10)
+                    ))
 
-                # Transfer function G(s)
-                den = [T1, 1] if T2 == 0 else np.polymul([T1, 1], [T2, 1])
-                G = tf([K], den)
-                if Td > 0:
-                    G *= tf([1], [1, Td])
-
-                # PID Controller C(s)
-                s = tf([1, 0], [1])
-                C = Kp + Ki / s + Kd * s
-
-                # Closed-loop system and step response
-                sys_cl = feedback(C * G, 1)
-                t, y = step(sys_cl, T=t)
-
-                # Step input and error signal
-                w = np.ones_like(t) * K
-                e = w - y
-
-                # Control effort
-                u = Kp * e + Ki * np.cumsum(e) * dt + Kd * np.gradient(e, dt)
-
-                # Plot control effort
-                """fig, ax = plt.subplots(figsize=(6, 3))
-                ax.plot(t, u, label="Control Effort $u(t)$", color="tab:red")
-                ax.set_xlabel("Time [s]")
-                ax.set_ylabel("Control Signal $u(t)$")
-                ax.set_title("Control Effort over Time")
-                ax.grid(True)
-                ax.legend()
-
-                return fig  # for display in Streamlit
-                dt = t_ml[1] - t_ml[0]
-                w = np.ones_like(t_ml) * K       # Step input signal
-                e = w - y                        # Error signal
-                u = Kp_ml * e + Ki_ml * np.cumsum(e) * dt + Kd_ml * np.gradient(e, dt)
-                T_final=t
-                fig = compute_and_plot_control_effort(K, T1, T2, Td, Kp_ml, Ki_ml, Kd_ml)
-                st.pyplot(fig)
-                fig_u, ax_u = plt.subplots(figsize=(6, 3))
-                ax_u.plot(t_ml, u, label="Control Effort $u(t)$", color="tab:red")
-                ax_u.set_xlabel("Time [s]")
-                ax_u.set_ylabel("Control Signal $u(t)$")
-                ax_u.set_title("Control Effort for ML-PID")
-                ax_u.grid(True)
-                ax_u.legend()
-                st.pyplot(fig_u)  # if using Streamlit' """
-
+                st.plotly_chart(fig, use_container_width=True)
 
         except Exception as e:
-            st.error(f"Prediction or simulation failed: {e}")
-
-
+            st.error(f"❌ Evaluation failed: {e}")
 
 
 elif mode == "📊 Evaluate PID":
@@ -2082,126 +1783,3 @@ elif mode == "🧪 Simulink Validation":
             except Exception as e:
                 st.error(f"❌ Simulation failed:\n{e}")
 
-
-
-
-# === Groq API setup ===
-client = OpenAI(
-    api_key=st.secrets["GROQ_API_KEY"],
-    base_url="https://api.groq.com/openai/v1"
-)
-model_name = "llama3-8b-8192"
-
-# === Session State ===
-if "floating_chat_history" not in st.session_state:
-    st.session_state.floating_chat_history = [
-        {"role": "system", "content": "You are a helpful assistant for PID tuning and ML optimization."}
-    ]
-
-# === Floating Chat Button and Box HTML/CSS ===
-floating_chat_html = """
-<style>
-#floatingChatBtn {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background-color: #5e81ac;
-    color: white;
-    border: none;
-    padding: 12px 16px;
-    border-radius: 20px;
-    font-size: 16px;
-    z-index: 10000;
-    cursor: pointer;
-}
-#floatingChatBox {
-    display: none;
-    position: fixed;
-    bottom: 70px;
-    right: 20px;
-    width: 340px;
-    max-height: 480px;
-    background-color: #1e293b;
-    color: white;
-    border-radius: 10px;
-    padding: 15px;
-    overflow-y: auto;
-    z-index: 9999;
-}
-</style>
-
-<button id="floatingChatBtn" onclick="toggleChat()">💬 Ask AI</button>
-<div id="floatingChatBox">
-    <p><strong>🤖 AI Assistant</strong></p>
-    <div id="chatHistory">You can ask about PID tuning, optimization, etc.</div>
-</div>
-
-<script>
-function toggleChat() {
-    var chatBox = document.getElementById("floatingChatBox");
-    if (chatBox.style.display === "none" || chatBox.style.display === "") {
-        chatBox.style.display = "block";
-    } else {
-        chatBox.style.display = "none";
-    }
-}
-</script>
-"""
-
-# === Chat Session State ===
-if "floating_chat_history" not in st.session_state:
-    st.session_state.floating_chat_history = [
-        {"role": "system", "content": "You are a professional assistant embedded in a Bachelor thesis tool for optimizing PID controller parameters using machine learning."
-    "Your answers should be concise, technically sound, and suitable for an academic or engineering audience (e.g., professors, recruiters). "
-    "Explain concepts from control theory and machine learning clearly and accurately. Focus on key topics like PID tuning, surrogate models, performance metrics (ISE, overshoot, settling time), and the benefits of data-driven methods over classical techniques like Ziegler-Nichols or CHR. "
-    "Respond in a structured, professional tone. Use Markdown for equations or formatting when helpful."}
-    ]
-
-# === Initialize Chat History (Session State) ===
-if "floating_chat_history" not in st.session_state:
-    st.session_state.floating_chat_history = [
-        {"role": "system", "content": (
-            "You are a professional AI assistant specialized in control theory and machine learning. "
-            "Answer briefly and clearly, suitable for academic and engineering use. "
-            "The user is working on a bachelor's thesis about 'Machine Learning-Based Optimization of PID Controller Parameters'. "
-            "Explain concepts like ISE, surrogate modeling, and PID tuning in a concise, academic tone."
-        )}
-    ]
-
-# === Floating Chat UI Block ===
-# === Ask the AI Assistant UI ===
-with st.container(border=True):
-    st.markdown("### 🤖 Ask the AI Assistant")
-    st.caption("Ask about PID control, optimization, surrogate models, etc.")
-    
-    # Show previous messages
-    if len(st.session_state.floating_chat_history) > 1:
-        for msg in st.session_state.floating_chat_history[1:]:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
-    
-    # === Input form
-    with st.form("chat_input_form"):
-        user_input = st.text_input("Your question:", key="chat_input")
-        submitted = st.form_submit_button("Send")
-    
-    # === Process immediately when form is submitted ===
-    if submitted and user_input.strip():
-        question = user_input.strip()
-        st.session_state.floating_chat_history.append({"role": "user", "content": question})
-        
-        with st.spinner("💬 Thinking..."):
-            client = OpenAI(
-                api_key=st.secrets["GROQ_API_KEY"],
-                base_url="https://api.groq.com/openai/v1"
-            )
-            response = client.chat.completions.create(
-                model="llama3-8b-8192",
-                messages=st.session_state.floating_chat_history,
-                temperature=0.5
-            )
-            reply = response.choices[0].message.content.strip()
-            st.session_state.floating_chat_history.append({"role": "assistant", "content": reply})
-        
-        # Force rerun to show the new messages
-        st.rerun()
