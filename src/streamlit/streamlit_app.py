@@ -121,6 +121,10 @@ if mode == "🔍 Predict PID":
     T1 = st.sidebar.number_input("T1", min_value=0.1, max_value=50.0, value=2.0)
     T2 = st.sidebar.number_input("T2", min_value=0.0, max_value=50.0, value=0.00)
     Td = st.sidebar.number_input("Td", min_value=0.0, max_value=5.0, value=0.50) 
+    w0 = st.sidebar.number_input("w0", min_value=0.1, max_value=10.0, value=1.0)
+    zeta = st.sidebar.number_input("zeta", min_value=0.0, max_value=1.0, value=0.5)
+    Tchar = st.sidebar.number_input("Tchar", min_value=0.0, max_value=50.0, value=0.0)
+    Family = st.sidebar.selectbox("Family", ["PT2_osc", "PT1PT2_existing", "IT1", "P"])
 
     st.sidebar.markdown("**Plot Settings**")
     t_max = st.sidebar.slider("Simulation Time [s]", 1, 300, 20, key="slider_t_max")
@@ -134,7 +138,7 @@ if mode == "🔍 Predict PID":
             if model_choice in ["Random Forest", "MLP"]:
                 X = np.array([[K, T1, T2, Td]])
             elif model_choice == "XGBoost":
-                X = np.array([[K, T1, T2]])
+                X = np.array([[K, Td, T1, T2, w0, zeta, Tchar,  Family]])
             else:
                 X = np.array([[K, T1, T2, Td]])  # full input for Symbolic and DGP
 
@@ -315,13 +319,28 @@ if mode == "🔍 Predict PID":
                     return y_pred_inv
 
 
-            if model_choice in ["Random Forest", "MLP", "XGBoost"]:
+            if model_choice in ["Random Forest", "MLP"]:
                 model_filename = f"model_{model_choice.lower().replace(' ', '_')}.joblib"
                 model_path = os.path.join(model_dir, model_filename)
                 model = joblib.load(model_path)
 
                 from utils.predict_pid import predict_pid_params
 
+
+                Kp, Ki, Kd = predict_pid_params(model, X)
+
+            elif model_choice == "XGBoost":
+                    # Build filenames
+                model_filename = f"{family}_{target}_xgb.pkl"
+                scaler_filename = f"{family}_{target}_scaler.pkl"
+                
+                # Paths
+                model_path = os.path.join(model_dir, model_filename)
+                scaler_path = os.path.join(model_dir, scaler_filename)
+
+                # Load
+                model = joblib.load(model_path)
+                scaler = joblib.load(scaler_path)
 
                 Kp, Ki, Kd = predict_pid_params(model, X)
 
