@@ -140,7 +140,7 @@ if mode == "🔍 Predict PID":
             elif model_choice == "XGBoost":
                 X = np.array([[K, Td, T1, T2, w0, zeta, Tchar,  Family]])
             else:
-                X = np.array([[K, T1, T2, Td]])  # full input for Symbolic and DGP
+                X = np.array([[K, T1, T2, Td]])  # #testfull input for Symbolic and DGP
 
             def load_and_predict_symb(param, K, T1, T2):
                 try:
