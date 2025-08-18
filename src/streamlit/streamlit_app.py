@@ -227,35 +227,117 @@ if mode == "🔍 Predict PID":
 
             if model_choice in ["Random Forest", "MLP"]:
                 X = np.array([[K, T1, T2, Td]])
+
             elif model_choice == "XGBoost":
-                # Use the Family selected in the sidebar
+                # ---- helpers (keep them once, ideally move them above) ----
+                ASSUME_LOG_TARGETS = True
+
+                _FAMILY_FEATURES = {
+                    "with": {
+                        "PT2_osc":         ["logK","logL1p","zeta","logw0p","wc","PhaseMargin","focus_balanced","focus_reference-tracking","focus_disturbance-rejection"],
+                        "PT1PT2_existing": ["logK","logL1p","logT1p","logT2p","wc","PhaseMargin","focus_balanced","focus_reference-tracking","focus_disturbance-rejection"],
+                        "IT1":             ["logK","logL1p","logT1p","wc","PhaseMargin","focus_balanced","focus_reference-tracking","focus_disturbance-rejection"],
+                        "P":               ["logK","logL1p","wc","PhaseMargin","focus_balanced","focus_reference-tracking","focus_disturbance-rejection"],
+                    },
+                    "without": {
+                        "PT2_osc":         ["logK","logL1p","zeta","logw0p"],
+                        "PT1PT2_existing": ["logK","logL1p","logT1p","logT2p"],
+                        "IT1":             ["logK","logL1p","logT1p"],
+                        "P":               ["logK","logL1p"],
+                    }
+                }
+
+                def _log1p0(x: float) -> float:
+                    import numpy as _np
+                    return float(_np.log1p(max(0.0, x)))
+
+                def _build_row(FamilySel: str, K, Td, T1, T2, w0, zeta, Tchar,
+                            wc_default=3.0, pm_default=60, focus_default="balanced"):
+                    import pandas as _pd
+                    feats = {
+                        "logK":      _log1p0(K),
+                        "logL1p":    _log1p0(Td),   # Td == L
+                        "logT1p":    _log1p0(T1),
+                        "logT2p":    _log1p0(T2),
+                        "logw0p":    _log1p0(w0),
+                        "logTcharp": _log1p0(Tchar),
+                        "zeta":      float(zeta),
+                        "wc": float(wc_default),
+                        "PhaseMargin": float(pm_default),
+                        "focus_balanced": 0.0,
+                        "focus_reference-tracking": 0.0,
+                        "focus_disturbance-rejection": 0.0,
+                    }
+                    key = f"focus_{focus_default}"
+                    if key in feats:
+                        feats[key] = 1.0
+
+                    cols_with = _FAMILY_FEATURES["with"][FamilySel]
+                    cols_wo   = _FAMILY_FEATURES["without"][FamilySel]
+
+                    row_with = {c: feats.get(c, 0.0) for c in cols_with}
+                    row_wo   = {c: feats.get(c, 0.0) for c in cols_wo}
+
+                    df_with = _pd.DataFrame([row_with], columns=cols_with)
+                    df_wo   = _pd.DataFrame([row_wo],   columns=cols_wo)
+                    return (df_with, cols_with), (df_wo, cols_wo)
+
+                def _load_family_model(model_dir: str, FamilySel: str, TargetSel: str):
+                    import os as _os, joblib as _joblib
+                    model_path  = _os.path.join(model_dir, f"{FamilySel}_{TargetSel}_xgb.pkl")
+                    scaler_path = _os.path.join(model_dir, f"{FamilySel}_{TargetSel}_scaler.pkl")
+                    if not _os.path.exists(model_path):
+                        raise FileNotFoundError(f"Missing model: {model_path}")
+                    if not _os.path.exists(scaler_path):
+                        raise FileNotFoundError(f"Missing scaler: {scaler_path}")
+                    model  = _joblib.load(model_path)
+                    scaler = _joblib.load(scaler_path)
+                    return model, scaler
+
+                def _predict_one(model, scaler, X_with, X_wo):
+                    import numpy as _np
+                    # Figure out expected feature count
+                    n_expected = getattr(scaler, "n_features_in_", None)
+                    if n_expected is None:
+                        n_expected = getattr(scaler, "mean_", None)
+                        n_expected = len(n_expected) if n_expected is not None else X_with.shape[1]
+
+                    if X_with.shape[1] == n_expected:
+                        Xs = scaler.transform(X_with.values)
+                    elif X_wo.shape[1] == n_expected:
+                        Xs = scaler.transform(X_wo.values)
+                    else:
+                        raise ValueError(f"Scaler expects {n_expected} features, "
+                                        f"but got {X_with.shape[1]} (with) and {X_wo.shape[1]} (without).")
+
+                    y_pred = model.predict(Xs)
+                    if ASSUME_LOG_TARGETS:
+                        y_pred = _np.expm1(y_pred)
+                    return float(max(0.0, y_pred[0]))
+                # ---- end helpers ----
+
                 Family_choice = Family  # from your selectbox
 
-                # Build both with/without-tuning rows (we'll auto-pick)
-                # You removed tuning, so we provide safe defaults (wc=3.0, PM=60, focus='balanced')
+                # Build feature rows (you removed tuning, so we pass safe defaults)
                 (X_with, _), (X_wo, _) = _build_row(
-                    Family=Family_choice,
+                    FamilySel=Family_choice,
                     K=K, Td=Td, T1=T1, T2=T2, w0=w0, zeta=zeta, Tchar=Tchar,
                     wc_default=3.0, pm_default=60, focus_default="balanced"
                 )
 
                 model_dir = os.path.join(os.path.dirname(__file__), "streamlit_models")
 
-                # Load & predict each target
                 preds = {}
-                for target in ["Kp", "Ki", "Kd"]:
-                    model, scaler = _load_family_model(model_dir, Family_choice, target)
-                    preds[target] = _predict_one(model, scaler, X_with, X_wo)
+                for TargetSel in ["Kp", "Ki", "Kd"]:
+                    model, scaler = _load_family_model(model_dir, Family_choice, TargetSel)
+                    preds[TargetSel] = _predict_one(model, scaler, X_with, X_wo)
 
-                # If you want to enforce trivial values by family, uncomment:
+                # Optionally enforce trivial values
                 # if Family_choice == "P":
                 #     preds["Ki"] = 0.0
                 #     preds["Kd"] = 0.0
 
                 Kp, Ki, Kd = preds["Kp"], preds["Ki"], preds["Kd"]
-
-            else:
-                X = np.array([[K, T1, T2, Td]])  # #testfull input for Symbolic and DGP
 
             def load_and_predict_symb(param, K, T1, T2):
                 try:
