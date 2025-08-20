@@ -117,14 +117,14 @@ if mode == "🔍 Predict PID":
         st.session_state.predict_clicked = False
 
     st.sidebar.markdown("**System Parameters**")
-    K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=1.50)
+    K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=5.0)
     T1 = st.sidebar.number_input("T1", min_value=0.0, max_value=50.0, value=2.0)
-    T2 = st.sidebar.number_input("T2", min_value=0.0, max_value=50.0, value=0.00)
-    Td = st.sidebar.number_input("Td", min_value=0.0, max_value=5.0, value=0.50) 
-    w0 = st.sidebar.number_input("w0", min_value=0.0, max_value=10.0, value=1.0)
-    zeta = st.sidebar.number_input("zeta", min_value=0.0, max_value=1.0, value=0.5)
+    T2 = st.sidebar.number_input("T2", min_value=0.0, max_value=50.0, value=1.00)
+    Td = st.sidebar.number_input("Td", min_value=0.0, max_value=5.0, value=0.0) 
+    w0 = st.sidebar.number_input("w0", min_value=0.0, max_value=10.0, value=0.0)
+    zeta = st.sidebar.number_input("zeta", min_value=0.0, max_value=1.0, value=0.0)
     Tchar = st.sidebar.number_input("Tchar", min_value=0.0, max_value=50.0, value=0.0)
-    Family = st.sidebar.selectbox("Family", ["PT2_osc", "PT1PT2_existing", "IT1", "P"])
+    Family = st.sidebar.selectbox("Family", ["PT1PT2_existing","PT2_osc", "IT1", "P"])
 
     st.sidebar.markdown("**Plot Settings**")
     t_max = st.sidebar.slider("Simulation Time [s]", 1, 300, 20, key="slider_t_max")
@@ -1441,211 +1441,207 @@ elif mode == "⚙️ Optimize PID":
             #st.table(data=combined_df)
 
             
+            # === Collect and SIMULATE up to 50 controllers; then pick best 5 by SIM metrics ===
             evaluated = result.get('evaluated_controllers', [])
             if not evaluated:
                 st.info("No evaluated controllers available.")
             else:
-                feasible_controllers = pd.DataFrame(evaluated)
+                raw_df = pd.DataFrame(evaluated)
 
-                unique_controllers = []
+                # --- Build a base plant (no controller) once ---
+                if T2 > 0:
+                    G_base = control.tf([K], np.convolve([T1, 1], [T2, 1]))
+                else:
+                    G_base = control.tf([K], [T1, 1])
 
-                for idx, candidate in feasible_controllers.iterrows():
-                    if not satisfies_constraints(candidate, constraints):
-                        continue
+                if Td > 0:
+                    num_d, den_d = control.pade(Td, 1)
+                    G_delay = control.tf(num_d, den_d)
+                    G_base = G_delay * G_base
 
-                    candidate_params = candidate[['Kp', 'Ki', 'Kd']].values
-                    Kp_i, Ki_i, Kd_i = candidate_params
-
-                    # Construct controller
-                    P = control.tf([Kp_i], [1])
-                    I = control.tf([Ki_i], [1, 0])
-                    D = control.tf([Kd_i, 0], [1])
+                # --- Helpers ---
+                def simulate_true_metrics(Kp, Ki, Kd):
+                    P = control.tf([Kp], [1])
+                    I = control.tf([Ki], [1, 0])
+                    D = control.tf([Kd, 0], [1])
                     C = P + I + D
+                    sys_cl = control.feedback(C * G_base, 1)
+                    # Stability gate
+                    if not is_stable(sys_cl):
+                        return None
 
-                    # Plant
-                    if T2 > 0:
-                        G_candidate = control.tf([K], np.convolve([T1, 1], [T2, 1]))
-                    else:
-                        G_candidate = control.tf([K], [T1, 1])
+                    t_sim = np.linspace(0, max(2.0*(T1 + max(T2,0) + Td), 100.0), 1000)
+                    t_sim, y_sim = control.step_response(sys_cl, t_sim)
+                    e_sim = 1.0 - y_sim
 
-                    if Td > 0:
-                        num, den = control.pade(Td, 1)
-                        G_delay = control.tf(num, den)
-                        G_candidate = G_delay * G_candidate
+                    ise_sim = simpson(e_sim**2, t_sim)
+                    sse_sim = abs(1.0 - y_sim[-1])
+                    overshoot_sim = (np.max(y_sim) - 1.0) * 100.0
 
-                    sys_cl_candidate = control.feedback(C * G_candidate, 1)
+                    # Rise time (10–90 % of final value)
+                    try:
+                        y_final = y_sim[-1]
+                        t_10 = t_sim[np.where(y_sim >= 0.1 * y_final)[0][0]]
+                        t_90 = t_sim[np.where(y_sim >= 0.9 * y_final)[0][0]]
+                        rise_time_sim = float(t_90 - t_10)
+                    except Exception:
+                        rise_time_sim = np.nan
 
-                    if not is_stable(sys_cl_candidate):
+                    # Settling time (±2 % band)
+                    tol = 0.02 * abs(y_sim[-1])
+                    settling_time_sim = np.nan
+                    for i in range(len(y_sim)):
+                        if np.all((y_sim[i:] >= 1.0 - tol) & (y_sim[i:] <= 1.0 + tol)):
+                            settling_time_sim = float(t_sim[i])
+                            break
+
+                    return {
+                        "ISE_sim": float(ise_sim),
+                        "SSE_sim": float(sse_sim),
+                        "Overshoot_sim": float(overshoot_sim),
+                        "RiseTime_sim": float(rise_time_sim) if np.isfinite(rise_time_sim) else np.nan,
+                        "SettlingTime_sim": float(settling_time_sim) if np.isfinite(settling_time_sim) else np.nan,
+                        "sys_cl": sys_cl  # keep for optional later use
+                    }
+
+                def violates_constraints(sim_metrics, constraints):
+                    # Use sim metrics only
+                    if constraints is None: 
+                        return False
+                    checks = [
+                        ("ISE_sim",       "ISE"),
+                        ("Overshoot_sim", "Overshoot"),
+                        ("SettlingTime_sim","SettlingTime"),
+                        ("RiseTime_sim",  "RiseTime"),
+                        ("SSE_sim",       "SSE"),
+                    ]
+                    for sim_key, c_key in checks:
+                        if c_key in constraints and constraints[c_key] is not None:
+                            lim = constraints[c_key]
+                            val = sim_metrics.get(sim_key, np.nan)
+                            if np.isnan(val):
+                                return True
+                            if val > lim:
+                                return True
+                    return False
+
+                def true_cost(sim_metrics, weights):
+                    # Weighted sum on simulated metrics (lower is better)
+                    parts = []
+                    for sim_key, w_key in [("ISE_sim","ISE"),
+                                        ("Overshoot_sim","Overshoot"),
+                                        ("SettlingTime_sim","SettlingTime"),
+                                        ("RiseTime_sim","RiseTime")]:
+                        w = float(weights.get(w_key, 0.0))
+                        v = sim_metrics.get(sim_key, np.nan)
+                        if np.isnan(v):
+                            return np.inf
+                        parts.append(w*v)
+                    return float(np.sum(parts))
+
+                # --- Phase 1: simulate until we have up to 50 feasible, stable items ---
+                simulated_rows = []
+                MAX_SIM = 50
+                for idx, row in raw_df.iterrows():
+                    # pull Kp,Ki,Kd from evaluated list (predicted candidates)
+                    try:
+                        Kp_i = float(row["Kp"])
+                        Ki_i = float(row["Ki"])
+                        Kd_i = float(row["Kd"])
+                    except Exception:
                         continue
 
-                    # Uniqueness check
-                    if not unique_controllers:
-                        unique_controllers.append(candidate)
-                    else:
-                        differences = [
-                            np.abs(candidate_params - np.array(ctrl[['Kp', 'Ki', 'Kd']]))
-                            for ctrl in unique_controllers
-                        ]
-                        is_different = all(np.any(diff >= 0.5) for diff in differences)
-                        #if is_different:
-                            #unique_controllers.append(candidate)
-                        if is_different:
-                            # === Simulate controller to get true performance metrics ===
-                            try:
-                                t_sim = np.linspace(0, max(2 * (T1 + T2 + Td), 100), 1000)
-                                t_response, y_response = control.step_response(sys_cl_candidate, t_sim)
-                                u_sim = np.ones_like(t_response)
-                                e_sim = u_sim - y_response
+                    sim = simulate_true_metrics(Kp_i, Ki_i, Kd_i)
+                    if sim is None:
+                        continue  # unstable or failed sim
 
-                                candidate["ISE_sim"] = simpson(e_sim**2, t_response)
-                                candidate["SSE_sim"] = abs(1.0 - y_response[-1])
-                                candidate["Overshoot_sim"] = (np.max(y_response) - 1.0) * 100
+                    if violates_constraints(sim, constraints):
+                        continue
 
-                                # Rise time
-                                try:
-                                    t_10 = t_response[np.where(y_response >= 0.1 * y_response[-1])[0][0]]
-                                    t_90 = t_response[np.where(y_response >= 0.9 * y_response[-1])[0][0]]
-                                    candidate["RiseTime_sim"] = t_90 - t_10
-                                except:
-                                    candidate["RiseTime_sim"] = np.nan
+                    # attach cost_true
+                    cost_true = true_cost(sim, weights)
+                    if not np.isfinite(cost_true):
+                        continue
 
-                                # Settling time (±5%)
-                                tol = 0.02 * abs(y_response[-1])
-                                for i in range(len(y_response)):
-                                    if np.all((y_response[i:] >= 1.0 - tol) & (y_response[i:] <= 1.0 + tol)):
-                                        candidate["SettlingTime_sim"] = t_response[i]
-                                        break
-                                else:
-                                    candidate["SettlingTime_sim"] = np.nan
+                    out = {
+                        "Kp": Kp_i, "Ki": Ki_i, "Kd": Kd_i,
+                        "ISE_sim": sim["ISE_sim"],
+                        "SSE_sim": sim["SSE_sim"],
+                        "Overshoot_sim": sim["Overshoot_sim"],
+                        "RiseTime_sim": sim["RiseTime_sim"],
+                        "SettlingTime_sim": sim["SettlingTime_sim"],
+                        "Cost_true": cost_true,
+                        # Keep predicted metrics too if present (useful for later comparison)
+                        "ISE": row.get("ISE", np.nan),
+                        "Overshoot": row.get("Overshoot", np.nan),
+                        "SettlingTime": row.get("SettlingTime", np.nan),
+                        "RiseTime": row.get("RiseTime", np.nan),
+                        "SSE": row.get("SSE", np.nan),
+                        "Cost": row.get("Cost", np.nan),
+                    }
+                    simulated_rows.append(out)
 
-                                # Now it's safe to append
-                                unique_controllers.append(candidate)
-
-                            except Exception as e:
-                                print(f"⚠️ Simulation failed for controller #{idx+1}: {e}")
-
-
-                    if len(unique_controllers) >= 5:
+                    if len(simulated_rows) >= MAX_SIM:
                         break
 
-                # === Build DataFrame AFTER loop
-                top5_df = pd.DataFrame(unique_controllers)
+                if len(simulated_rows) == 0:
+                    st.error("❌ No feasible/stable controllers after simulation and constraints.")
+                    st.stop()
 
-                print("✅ [DEBUG] Initial top5_df types:")
-                print(top5_df.dtypes)
-                                # === Define simulation error thresholds
-                error_thresholds = {
-                    "ISE": 1.5,
-                    "Overshoot": 15.0,
-                    "SettlingTime": 5.0,
-                    "RiseTime": 5.3
-                }
+                sim_df = pd.DataFrame(simulated_rows)
 
-                # === Compute absolute error per metric
-                for metric in ["ISE", "Overshoot", "SettlingTime", "RiseTime"]:
-                    try:
-                        top5_df[f"{metric}_err"] = (top5_df[metric] - top5_df[f"{metric}_sim"]).abs()
-                    except Exception as e:
-                        st.warning(f"Skipping {metric} error check: {e}")
+                # --- Phase 2: sort by simulated true cost (best first) ---
+                sim_df = sim_df.sort_values("Cost_true", ascending=True).reset_index(drop=True)
 
-                # === Apply filtering condition
-                valid_top5_df = top5_df[
-                    (top5_df["ISE_err"] <= error_thresholds["ISE"]) &
-                    (top5_df["Overshoot_err"] <= error_thresholds["Overshoot"]) &
-                    (top5_df["SettlingTime_err"] <= error_thresholds["SettlingTime"]) &
-                    (top5_df["RiseTime_err"] <= error_thresholds["RiseTime"])
-                ].copy()
-                num_valid = len(valid_top5_df)
-                print(f"✅ [DEBUG] {num_valid} out of {len(top5_df)} controllers passed the true cost accuracy check.")
+                # --- Phase 3: pick 5 UNIQUE controllers AFTER sorting ---
+                MIN_DELTA = 0.5  # uniqueness radius in parameter space
+                picked = []
+                for _, r in sim_df.iterrows():
+                    p = np.array([r["Kp"], r["Ki"], r["Kd"]], dtype=float)
+                    if any(np.all(np.abs(p - np.array([q["Kp"], q["Ki"], q["Kd"]])) < MIN_DELTA) for q in picked):
+                        continue
+                    picked.append(r.to_dict())
+                    if len(picked) == 5:
+                        break
 
-                # === Fallback: use all if none meet threshold
-                if valid_top5_df.empty:
-                    st.warning("⚠️ No top controllers met simulation accuracy thresholds. Showing unfiltered top 5.")
-                    valid_top5_df = top5_df.copy()
+                # Fallback: if uniqueness collapses to <5, we still show what we have (and pad later)
+                top5_df = pd.DataFrame(picked)
 
                 # === Padding if fewer than 5
-                if len(valid_top5_df) < 5:
-                    pad_rows = 5 - len(valid_top5_df)
+                if len(top5_df) < 5:
+                    pad_rows = 5 - len(top5_df)
                     padding = pd.DataFrame([{
                         'Kp': np.nan, 'Ki': np.nan, 'Kd': np.nan,
                         'ISE': np.nan, 'Overshoot': np.nan, 'SettlingTime': np.nan,
                         'RiseTime': np.nan, 'SSE': np.nan, 'Cost': np.nan,
-                        'ISE_std': np.nan, 'Overshoot_std': np.nan,
-                        'SettlingTime_std': np.nan, 'RiseTime_std': np.nan,
-                        'ISE_sim': np.nan, 'Overshoot_sim': np.nan,
-                        'SettlingTime_sim': np.nan, 'RiseTime_sim': np.nan,
-                        'SSE_sim': np.nan
+                        'ISE_sim': np.nan, 'Overshoot_sim': np.nan, 'SettlingTime_sim': np.nan,
+                        'RiseTime_sim': np.nan, 'SSE_sim': np.nan,
+                        'Cost_true': np.nan
                     }] * pad_rows)
-                    valid_top5_df = pd.concat([valid_top5_df, padding], ignore_index=True)
+                    top5_df = pd.concat([top5_df, padding], ignore_index=True)
 
-                # Continue processing with filtered top5_df
-                top5_df = valid_top5_df
+                # === Prepare display columns (retain your *_val and ±std formatting logic) ===
+                # Raw numeric copies for plotting later:
+                top5_df["Kp_val"] = pd.to_numeric(top5_df["Kp"], errors="coerce")
+                top5_df["Ki_val"] = pd.to_numeric(top5_df["Ki"], errors="coerce")
+                top5_df["Kd_val"] = pd.to_numeric(top5_df["Kd"], errors="coerce")
 
+                # If you still want to show predicted mean ± std for comparison, keep your fmt() logic.
+                # Otherwise, just round simulated columns and show:
+                for c in ["ISE_sim","Overshoot_sim","SettlingTime_sim","RiseTime_sim","SSE_sim","Cost_true"]:
+                    if c in top5_df.columns:
+                        top5_df[c] = pd.to_numeric(top5_df[c], errors="coerce").round(3)
 
-
-                # === STEP 1: Save raw numeric copies BEFORE formatting
-                try:
-                    top5_df["Kp_val"] = pd.to_numeric(top5_df["Kp"], errors="coerce")
-                    top5_df["Ki_val"] = pd.to_numeric(top5_df["Ki"], errors="coerce")
-                    top5_df["Kd_val"] = pd.to_numeric(top5_df["Kd"], errors="coerce")
-                    print("✅ [DEBUG] Kp_val/Ki_val/Kd_val created")
-                except Exception as e:
-                    st.error(f"❌ Failed creating *_val columns: {e}")
-                    st.write(top5_df[["Kp", "Ki", "Kd"]].head())
-
-                # === STEP 2: Define confidence interval formatter
-                def fmt(val, std):
-                    try:
-                        val = float(val)
-                        std = float(std)
-                        return f"{val:.2f} ± {std:.2f}"
-                    except:
-                        return "-"
-
-                # === STEP 3: Format display columns
-                top5_df["Kp"] = top5_df.apply(lambda r: fmt(r["Kp_val"], r["ISE_std"]), axis=1)
-                top5_df["Ki"] = top5_df.apply(lambda r: fmt(r["Ki_val"], r["Overshoot_std"]), axis=1)
-                top5_df["Kd"] = top5_df.apply(lambda r: fmt(r["Kd_val"], r["SettlingTime_std"]), axis=1)
-                top5_df["ISE"] = top5_df.apply(lambda r: fmt(r["ISE"], r["ISE_std"]), axis=1)
-                top5_df["Overshoot"] = top5_df.apply(lambda r: fmt(r["Overshoot"], r["Overshoot_std"]), axis=1)
-                top5_df["SettlingTime"] = top5_df.apply(lambda r: fmt(r["SettlingTime"], r["SettlingTime_std"]), axis=1)
-                top5_df["RiseTime"] = top5_df.apply(lambda r: fmt(r["RiseTime"], r["RiseTime_std"]), axis=1)
-
-                # === STEP 4: Simulation output rounding
-                try:
-                    top5_df["ISE_sim"] = pd.to_numeric(top5_df["ISE_sim"], errors="coerce").round(2)
-                    top5_df["Overshoot_sim"] = pd.to_numeric(top5_df["Overshoot_sim"], errors="coerce").round(2)
-                    top5_df["SettlingTime_sim"] = pd.to_numeric(top5_df["SettlingTime_sim"], errors="coerce").round(2)
-                    top5_df["RiseTime_sim"] = pd.to_numeric(top5_df["RiseTime_sim"], errors="coerce").round(2)
-                    top5_df["SSE"] = pd.to_numeric(top5_df["SSE_sim"], errors="coerce").round(3)
-                except:
-                # except Exception as e:
-                    #st.error(f"❌ Simulation column conversion failed: {e}")
-                    pass  # silently ignore any error
-
-                # === STEP 5: Drop std columns (safe)
-                top5_df.drop(columns=[
-                    'ISE_std', 'Overshoot_std', 'SettlingTime_std', 'RiseTime_std', 'SSE_std'
-                ], inplace=True, errors='ignore')
-
-                # === Final type check
-                print("✅ [DEBUG] Final top5_df types before display:")
-                print(top5_df.dtypes)
-
-                # === STEP 6: Display final table
+                st.markdown("#### 🏆 Top 5 Distinct PID Controllers (sorted by **simulated** cost)")
                 display_cols = [
                     "Kp", "Ki", "Kd",
-                    "ISE", "ISE_sim",
-                    "Overshoot", "Overshoot_sim",
-                    "SettlingTime", "SettlingTime_sim",
-                    "RiseTime", "RiseTime_sim",
-                    "SSE", "Cost",
+                    "ISE_sim", "Overshoot_sim", "SettlingTime_sim", "RiseTime_sim", "SSE_sim",
+                    "Cost_true"
                 ]
+                st.dataframe(top5_df[display_cols])
 
-                st.markdown("#### 🏆 Top 5 Distinct PID Controllers")
-                st.dataframe(top5_df[display_cols].style.format({
-                    'SSE': '{:.3f}', 'Cost': '{:.2f}'
-                }))
+                # Keep using top5_df downstream (plots etc.) with `Kp_val/Ki_val/Kd_val` and *_sim series.
+
 
 
 
