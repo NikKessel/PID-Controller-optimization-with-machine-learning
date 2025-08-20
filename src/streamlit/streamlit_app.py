@@ -1540,8 +1540,63 @@ elif mode == "⚙️ Optimize PID":
                     return float(np.sum(parts))
 
                 # --- Phase 1: simulate until we have up to 50 feasible, stable items ---
+                # --- helpers (put near other utils) ---
+                def check_constraints(sim, constraints):
+                    """
+                    Return (violates:boolean, reasons:list[str]).
+                    Expects 'sim' to contain the simulated metrics with keys that match your code.
+                    """
+                    reasons = []
+
+                    # Pull with defaults to avoid KeyError
+                    ISE_max  = constraints.get("ISE",           None)
+                    OS_max   = constraints.get("Overshoot",     None)
+                    ST_max   = constraints.get("SettlingTime",  None)
+                    RT_max   = constraints.get("RiseTime",      None)
+                    SSE_max  = constraints.get("SSE",           None)
+
+                    # Access sim metrics (adapt names if yours differ)
+                    ISE = sim.get("ISE_sim", None)
+                    OS  = sim.get("Overshoot_sim", None)
+                    ST  = sim.get("SettlingTime_sim", None)
+                    RT  = sim.get("RiseTime_sim", None)
+                    SSE = sim.get("SSE_sim", None)
+
+                    # Basic domain sanity (optional)
+                    if ISE is None or ISE <= 0: reasons.append("ISE<=0/None")
+                    if ST  is None or ST  <= 0: reasons.append("ST<=0/None")
+                    if RT  is None or RT  <= 0: reasons.append("RT<=0/None")
+                    if OS  is None or OS  <  0: reasons.append("OS<0/None")
+                    # If you model OS in %, clamp here accordingly.
+
+                    # Upper-bound constraints
+                    if ISE_max is not None and ISE is not None and ISE > ISE_max: reasons.append("ISE>max")
+                    if OS_max  is not None and OS  is not None and OS  > OS_max:  reasons.append("OS>max")
+                    if ST_max  is not None and ST  is not None and ST  > ST_max:  reasons.append("ST>max")
+                    if RT_max  is not None and RT  is not None and RT  > RT_max:  reasons.append("RT>max")
+                    if SSE_max is not None and SSE is not None and SSE > SSE_max: reasons.append("SSE>max")
+
+                    return (len(reasons) > 0), reasons
                 simulated_rows = []
-                MAX_SIM = 500
+                MAX_SIM = 100
+                # Debug counters
+                dbg = {
+                    "raw_candidates": int(len(raw_df)),
+                    "sim_failed": 0,          # simulate_true_metrics returned None / unstable / exception
+                    "constraint_ISE": 0,
+                    "constraint_OS": 0,
+                    "constraint_ST": 0,
+                    "constraint_RT": 0,
+                    "constraint_SSE": 0,
+                    "constraint_other": 0,    # domain sanity (<=0/None) etc.
+                    "nonfinite_cost": 0,
+                    "accepted": 0,
+                    "cap_reached": 0,         # stopped due to MAX_SIM
+                    "unique_filtered": 0,     # Phase 3 uniqueness culling
+}           
+                rejected_samples = []
+                MAX_REJECT_SAMPLES = 30
+
                 for idx, row in raw_df.iterrows():
                     # pull Kp,Ki,Kd from evaluated list (predicted candidates)
                     try:
@@ -1549,18 +1604,55 @@ elif mode == "⚙️ Optimize PID":
                         Ki_i = float(row["Ki"])
                         Kd_i = float(row["Kd"])
                     except Exception:
+                        # malformed row—treat as sim failure sample
+                        dbg["sim_failed"] += 1
+                        if len(rejected_samples) < MAX_REJECT_SAMPLES:
+                            rejected_samples.append({"idx": idx, "reason": "parse_params_failed"})
                         continue
 
-                    sim = simulate_true_metrics(Kp_i, Ki_i, Kd_i)
+                    sim = None
+                    try:
+                        sim = simulate_true_metrics(Kp_i, Ki_i, Kd_i)
+                    except Exception:
+                        sim = None
+
                     if sim is None:
+                        dbg["sim_failed"] += 1
+                        if len(rejected_samples) < MAX_REJECT_SAMPLES:
+                            rejected_samples.append({"idx": idx, "Kp": Kp_i, "Ki": Ki_i, "Kd": Kd_i, "reason": "sim_failed/unstable"})
                         continue  # unstable or failed sim
 
-                    if violates_constraints(sim, constraints):
+                    violates, reasons = check_constraints(sim, constraints)
+                    if violates:
+                        # Tally fine-grained reasons
+                        counted_specific = False
+                        for r in reasons:
+                            if r == "ISE>max": dbg["constraint_ISE"] += 1; counted_specific = True
+                            elif r == "OS>max": dbg["constraint_OS"] += 1; counted_specific = True
+                            elif r == "ST>max": dbg["constraint_ST"] += 1; counted_specific = True
+                            elif r == "RT>max": dbg["constraint_RT"] += 1; counted_specific = True
+                            elif r == "SSE>max": dbg["constraint_SSE"] += 1; counted_specific = True
+
+                        # Domain sanity & nulls bucket
+                        if not counted_specific:
+                            dbg["constraint_other"] += 1
+
+                        if len(rejected_samples) < MAX_REJECT_SAMPLES:
+                            rejected_samples.append({
+                                "idx": idx, "Kp": Kp_i, "Ki": Ki_i, "Kd": Kd_i,
+                                "reason": ",".join(reasons)
+                            })
                         continue
 
                     # attach cost_true
                     cost_true = true_cost(sim, weights)
                     if not np.isfinite(cost_true):
+                        dbg["nonfinite_cost"] += 1
+                        if len(rejected_samples) < MAX_REJECT_SAMPLES:
+                            rejected_samples.append({
+                                "idx": idx, "Kp": Kp_i, "Ki": Ki_i, "Kd": Kd_i,
+                                "reason": "nonfinite_cost"
+                            })
                         continue
 
                     out = {
@@ -1580,12 +1672,19 @@ elif mode == "⚙️ Optimize PID":
                         "Cost": row.get("Cost", np.nan),
                     }
                     simulated_rows.append(out)
+                    dbg["accepted"] += 1
 
                     if len(simulated_rows) >= MAX_SIM:
+                        dbg["cap_reached"] += 1
                         break
 
                 if len(simulated_rows) == 0:
                     st.error("❌ No feasible/stable controllers after simulation and constraints.")
+                    # Optional: print debug summary before stop
+                    with st.expander("Debug summary"):
+                        st.write(dbg)
+                        if rejected_samples:
+                            st.write(pd.DataFrame(rejected_samples))
                     st.stop()
 
                 sim_df = pd.DataFrame(simulated_rows)
