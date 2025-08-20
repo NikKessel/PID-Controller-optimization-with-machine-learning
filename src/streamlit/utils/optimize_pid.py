@@ -230,6 +230,12 @@ def optimize_pid_for_system(K, T1, T2, T_d, model_choice, weights, constraints):
         print("❌ Test warning - objective function returned invalid cost on initial guess")
         print("🔁 Proceeding with optimization anyway...")
 
+    if len(evaluated_controllers) > 0:
+        df = pd.DataFrame(evaluated_controllers)
+        df = df[np.isfinite(df["Cost"])]   # filter out invalid
+        df = df.sort_values("Cost")        # best first
+        print("\n📋 Evaluated Controllers (Top 10):")
+        print(df.head(10).to_string(index=False))
 
     try:
         result = differential_evolution(

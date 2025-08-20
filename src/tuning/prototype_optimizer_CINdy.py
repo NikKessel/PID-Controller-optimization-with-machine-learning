@@ -107,8 +107,8 @@ def predict_metrics(K, T1, T2, Kp, Ki, Kd) -> Dict[str, float]:
             with torch.no_grad():
                 output = likelihood(model(X_tensor))
                 mean = output.mean.item()
-                #if "log" in target:
-                    #mean = np.power(10, mean) - 1
+                if "log" in target:
+                    mean = np.power(10, mean) - 1
                 preds[target.replace("_log", "")] = mean
                 print(f"[✔️ {target}] Prediction: {mean:.6f}")
                 print(f"[📊 Raw output.mean] {target}: {output.mean.item():.4f}")

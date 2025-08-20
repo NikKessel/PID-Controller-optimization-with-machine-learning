@@ -1,5 +1,5 @@
 %% === Configuration ===
-num_samples = 10000;
+num_samples = 100000;
 T_final = max(50);  % Simulation time
 results = {};
 all_t = {}; all_y = {};
@@ -14,14 +14,14 @@ system_definitions = {
     "VeryLowGain",     0.5, 2.8,   1.0, 50.0,   1.0, 50.0;
     "LowGain",         0.9, 4.2,   1.0, 30.0,   1.0, 30.0;
     "MediumGain",      0.8, 5.0,   6.0, 20.0,   6.0, 20.0;
-    "HighGain",        1.5, 8.0,   2.0, 8.0,    2.0, 10.0;
-    "VeryHighGain",    2.5, 10.0,  0.5, 5.0,    0.5, 5.0;
+    "HighGain",        1.5, 15.0,   0.10, 8.0,    2.0, 10.0;
+    "VeryHighGain",    2.5, 20.0,  0.5, 5.0,    0.5, 5.0;
 };
 num_types = size(system_definitions, 1);
 
 % === SYSTEM FAMILY MIX (probabilities sum to 1) ===
 family_names  = {'PT1PT2_existing','PT2_osc','IT1','P'};
-family_probs  = [0.50,                0.25,     0.20, 0.05];  % tune as needed
+family_probs  = [0.70,                0.15,     0.20, 0.1];  % tune as needed
 family_cum    = cumsum(family_probs / sum(family_probs));     % for sampling
 
 % === PARAMETER RANGES FOR NEW FAMILIES ===
