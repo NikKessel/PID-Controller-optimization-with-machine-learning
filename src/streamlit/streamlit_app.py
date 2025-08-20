@@ -1603,12 +1603,18 @@ elif mode == "⚙️ Optimize PID":
                         Kp_i = float(row["Kp"])
                         Ki_i = float(row["Ki"])
                         Kd_i = float(row["Kd"])
+
                     except Exception:
-                        # malformed row—treat as sim failure sample
                         dbg["sim_failed"] += 1
                         if len(rejected_samples) < MAX_REJECT_SAMPLES:
-                            rejected_samples.append({"idx": idx, "reason": "parse_params_failed"})
+                            rejected_samples.append({
+                                "idx": idx,
+                                "Kp": row.get("Kp", np.nan), "Ki": row.get("Ki", np.nan), "Kd": row.get("Kd", np.nan),
+                                "ISE_sim": np.nan, "SSE_sim": np.nan, "Overshoot_sim": np.nan,
+                                "reason": "parse_params_failed"
+                            })
                         continue
+
 
                     sim = None
                     try:
@@ -1651,6 +1657,9 @@ elif mode == "⚙️ Optimize PID":
                         if len(rejected_samples) < MAX_REJECT_SAMPLES:
                             rejected_samples.append({
                                 "idx": idx, "Kp": Kp_i, "Ki": Ki_i, "Kd": Kd_i,
+                                         "ISE_sim": sim.get("ISE_sim", np.nan),
+            "SSE_sim": sim.get("SSE_sim", np.nan),
+            "Overshoot_sim": sim.get("Overshoot_sim", np.nan),
                                 "reason": "nonfinite_cost"
                             })
                         continue
