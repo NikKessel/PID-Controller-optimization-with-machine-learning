@@ -1,302 +1,297 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import signal
-from scipy.optimize import minimize_scalar
 import warnings
 warnings.filterwarnings('ignore')
 
+# -------------------------- Utility: polynomial ops (kept) ------------------- #
+def poly_add(a, b):
+    if len(a) < len(b):
+        a = np.pad(a, (len(b) - len(a), 0))
+    elif len(b) < len(a):
+        b = np.pad(b, (len(a) - len(b), 0))
+    return a + b
+
+def tf_series(num1, den1, num2, den2):
+    return np.polymul(num1, num2), np.polymul(den1, den2)
+
+def tf_feedback(num, den):
+    den_cl = poly_add(den, num)  # unity negative feedback: L/(1+L)
+    num_cl = num
+    return num_cl, den_cl
+
+
 class ZieglerNicholsTuner:
     def __init__(self):
-        self.L = None  # Dead time from Wendetangenten
-        self.tau = None  # Time constant from Wendetangenten
-        self.K = None  # Process gain
+        self.L = None      # Tu (dead time) from Wendetangente
+        self.tau = None    # Tg (time constant)
+        self.K = None      # Ks (DC gain for unit step)
         self.inflection_point = None
         self.tangent_params = None
-        
-    def create_pt2_system(self, K, T1, T2, deadtime=0):
-        """Create PT2 transfer function"""
-        # PT2: K / ((T1*s + 1)(T2*s + 1))
+
+    # ---------------------- Plant definitions (open loop) --------------------- #
+    def create_pt2_system(self, K, T1, T2, deadtime=0.0):
+        """PT2: K / ((T1 s + 1)(T2 s + 1))."""
         num = [K]
-        den = np.convolve([T1, 1], [T2, 1])  # (T1*s + 1)(T2*s + 1)
-        
+        den = np.convolve([T1, 1.0], [T2, 1.0])
         sys = signal.TransferFunction(num, den)
-        return sys, deadtime  # Return system and deadtime separately
-    
-    def create_it1_system(self, K, T1, deadtime=0):
-        """Create IT1 (integrating) transfer function"""
-        # IT1: K / (s * (T1*s + 1))
+        return sys, float(deadtime)
+
+    def create_it1_system(self, K, T1, deadtime=0.0):
+        """IT1: K / (s (T1 s + 1))."""
         num = [K]
-        den = [T1, 1, 0]  # s * (T1*s + 1) = T1*s^2 + s
-        
+        den = [T1, 1.0, 0.0]  # T1 s^2 + s
         sys = signal.TransferFunction(num, den)
-        return sys, deadtime  # Return system and deadtime separately
-    
-    def simulate_step_response(self, sys_tuple, t_final=50, n_points=2000):
-        """Simulate step response with dead time"""
+        return sys, float(deadtime)
+
+    def simulate_step_response(self, sys_tuple, t_final=50.0, n_points=2000):
+        """Open-loop step response, dead time applied by shifting the output."""
         sys, deadtime = sys_tuple
-        t = np.linspace(0, t_final, n_points)
-        
-        # Get step response without dead time
-        t_temp, y_temp = signal.step(sys, T=t)
-        
-        # Apply dead time by shifting the response
+        t = np.linspace(0.0, t_final, n_points)
+        t0, y0 = signal.step(sys, T=t)
+
         if deadtime > 0:
-            # Find the index corresponding to dead time
-            deadtime_idx = int(deadtime / (t[1] - t[0]))
-            y = np.zeros_like(t_temp)
-            
-            # Shift response by dead time
-            if deadtime_idx < len(y):
-                y[deadtime_idx:] = y_temp[:-deadtime_idx] if deadtime_idx > 0 else y_temp
+            dt = t[1] - t[0]
+            shift = int(round(deadtime / dt))
+            y = np.zeros_like(y0)
+            if shift < len(y0):
+                y[shift:] = y0[:len(y0) - shift]
         else:
-            y = y_temp
-            
-        return t_temp, y
-    
+            y = y0
+        return t, y
+
+    # -------------------- Wendetangente: feature extraction ------------------- #
     def find_inflection_point(self, t, y):
-        """Find inflection point (maximum slope) in step response"""
-        # Calculate first derivative (slope)
         dt = t[1] - t[0]
         dy_dt = np.gradient(y, dt)
-        
-        # Find maximum slope point
-        max_slope_idx = np.argmax(dy_dt)
-        
-        self.inflection_point = {
-            't': t[max_slope_idx],
-            'y': y[max_slope_idx], 
-            'slope': dy_dt[max_slope_idx]
-        }
-        
+        i = int(np.argmax(dy_dt))
+        self.inflection_point = {'t': t[i], 'y': y[i], 'slope': dy_dt[i]}
         return self.inflection_point
-    
+
     def fit_tangent_line(self, t, y):
-        """Fit tangent line at inflection point"""
         ip = self.inflection_point
-        
-        # Tangent line: y = slope * (t - t_inflection) + y_inflection
-        def tangent(time):
-            return ip['slope'] * (time - ip['t']) + ip['y']
-        
         self.tangent_params = {
             'slope': ip['slope'],
             'intercept': ip['y'] - ip['slope'] * ip['t']
         }
-        
+        def tangent(tt):
+            return self.tangent_params['slope'] * tt + self.tangent_params['intercept']
         return tangent
-    
+
     def extract_wendetangenten_parameters(self, t, y, system_type='PT2'):
-        """Extract L (dead time) and tau (time constant) using Wendetangenten method"""
-        tangent_func = self.fit_tangent_line(t, y)
-        
-        if system_type == 'PT2':
-            # For PT2: find where tangent intersects initial value (y=0) and final value
-            y_initial = 0
-            y_final = y[-1]  # Steady state value
-            
-            # Dead time L: where tangent line intersects y = y_initial
-            # 0 = slope * (t - t_inflection) + y_inflection
-            t_dead = self.inflection_point['t'] - self.inflection_point['y'] / self.inflection_point['slope']
-            self.L = max(0, t_dead)  # Ensure positive
-            
-            # Time constant tau: time from end of dead time to 63% of final value
-            # Find where tangent intersects y = y_final
-            t_final_tangent = (y_final - self.inflection_point['y']) / self.inflection_point['slope'] + self.inflection_point['t']
-            
-            self.tau = t_final_tangent - self.L
-            self.K = y_final  # Process gain
-            
-        elif system_type == 'IT1':
-            # For integrating systems, use different approach
-            # Use the slope at inflection point and time to characterize
-            self.K = self.inflection_point['slope']  # For IT1, gain relates to slope
-            
-            # For IT1, estimate parameters from response shape
-            # This is a simplified approach - more complex methods exist
-            t_63 = None
-            y_max_slope = self.inflection_point['y']
-            
-            # Find time where response reaches certain multiple of inflection point value
-            target_y = 2 * y_max_slope
-            idx_63 = np.where(y >= target_y)[0]
-            if len(idx_63) > 0:
-                t_63 = t[idx_63[0]]
-                self.tau = t_63 - self.inflection_point['t']
-                self.L = self.inflection_point['t'] / 2  # Rough estimate
-            else:
-                self.tau = self.inflection_point['t']
-                self.L = self.inflection_point['t'] / 3
-    
+        tangent = self.fit_tangent_line(t, y)
+        y_final = float(y[-1])                     # steady-state value for unit step
+        Tu = self.inflection_point['t'] - self.inflection_point['y'] / self.inflection_point['slope']
+        Tu = max(0.0, Tu)
+        t_cross_final = (y_final - self.inflection_point['y'])/self.inflection_point['slope'] + self.inflection_point['t']
+        Tg = max(0.0, t_cross_final - Tu)
+        self.L, self.tau, self.K = Tu, Tg, y_final   # Ks = steady value for unit step
+        return self.L, self.tau, self.K
+
+    # ----------------------------- PID formulas ------------------------------ #
     def calculate_pid_parameters(self, method='ZN'):
-        """Calculate PID parameters using official formulas from tables"""
-        if self.L is None or self.tau is None:
-            raise ValueError("Must extract Wendetangenten parameters first")
-        
-        # Using the exact formulas from the official tables
-        # Where Tg = self.tau (time constant from Wendetangenten)
-        # Where Tu = self.L (dead time from Wendetangenten) 
-        # Where Ks = self.K (process gain)
-        
-        Tg = self.tau  # Tg in formulas
-        Tu = self.L    # Tu in formulas  
-        Ks = self.K    # Ks in formulas
-        
+        if self.L is None or self.tau is None or self.K is None:
+            raise ValueError("Run Wendetangente extraction first.")
+        Tu, Tg, Ks = self.L, self.tau, self.K
+
         if method == 'ZN':
-            # Ziegler-Nichols Method 2: Step Response (from Image 1)
-            # PID row: Kp = 1.2*Tg/(Ks*Tu), TN = 2*Tu, TV = 0.5*Tu
             Kp = 1.2 * Tg / (Ks * Tu) if Tu > 0 else 0.5 / Ks
-            TN = 2 * Tu if Tu > 0 else Tg  # TN is integral time (Ti)
-            TV = 0.5 * Tu if Tu > 0 else 0  # TV is derivative time (Td)
-            
+            Ti = 2.0 * Tu if Tu > 0 else Tg
+            Td = 0.5 * Tu if Tu > 0 else 0.0
         elif method == 'CHR_aperiodic':
-            # CHR Aperiodic (0% overshoot) from Image 2 - left side
-            # PID row: Kp = 0.6*Tg/(Ks*Tu), TN = 1*Tg, TV = 0.5*Tu
             Kp = 0.6 * Tg / (Ks * Tu) if Tu > 0 else 0.3 / Ks
-            TN = 1.0 * Tg if Tu > 0 else 2 * Tg
-            TV = 0.5 * Tu if Tu > 0 else 0
-            
+            Ti = 1.0 * Tg if Tu > 0 else 2.0 * Tg
+            Td = 0.5 * Tu if Tu > 0 else 0.0
         elif method == 'CHR_20':
-            # CHR 20% Overshoot from Image 2 - right side  
-            # PID row: Kp = 0.95*Tg/(Ks*Tu), TN = 1.35*Tg, TV = 0.47*Tu
             Kp = 0.95 * Tg / (Ks * Tu) if Tu > 0 else 0.7 / Ks
-            TN = 1.35 * Tg if Tu > 0 else Tg
-            TV = 0.47 * Tu if Tu > 0 else 0
-            
-        # Convert to standard PID form
-        Ti = TN  # Integral time
-        Td = TV  # Derivative time
-        Ki = Kp / Ti if Ti > 0 else 0
+            Ti = 1.35 * Tg if Tu > 0 else Tg
+            Td = 0.47 * Tu if Tu > 0 else 0.0
+        else:
+            raise ValueError("Unknown method")
+
+        Ki = Kp / Ti if Ti > 0 else 0.0
         Kd = Kp * Td
-        
-        return {
-            'Kp': Kp,
-            'Ki': Ki, 
-            'Kd': Kd,
-            'Ti': Ti,
-            'Td': Td,
-            'TN': TN,
-            'TV': TV,
-            'L': self.L,
-            'tau': self.tau,
-            'K': self.K
-        }
-    
-    def plot_analysis(self, t, y, tangent_func, pid_params, system_type='PT2'):
-        """Plot step response with Wendetangenten analysis"""
+        return {'Kp': Kp, 'Ki': Ki, 'Kd': Kd, 'Ti': Ti, 'Td': Td,
+                'Tu': Tu, 'Tg': Tg, 'Ks': Ks}
+
+    # -------------------- Closed-loop sim with REAL time delay ---------------- #
+    def simulate_closed_loop_td(self, K, T1, T2, L, Kp, Ki, Kd,
+                               N=20.0, T_end=30.0, dt=0.002):
+        """
+        Simulate closed loop with explicit time delay via FIFO buffer.
+        Plant: two cascaded 1st-order lags -> y = K * x2
+            x1' = (-x1 + u_L)/T1
+            x2' = (-x2 + x1)/T2
+        Controller (parallel, filtered D): u = Kp*e + I + v
+            I' = Ki*e
+            v' = N*(Kd*de/dt - v)
+        """
+        n = int(T_end / dt) + 1
+        t = np.linspace(0.0, T_end, n)
+
+        # Delay buffer for plant input
+        dsteps = max(1, int(round(L / dt))) if L > 0 else 0
+        buf = np.zeros(dsteps + 1)
+
+        # States
+        x1 = x2 = y = 0.0
+        I = 0.0
+        v = 0.0
+        e_prev = 0.0
+        y_hist = np.zeros(n)
+
+        for i, ti in enumerate(t):
+            r = 1.0
+            e = r - y
+            de = (e - e_prev) / dt if i > 0 else 0.0
+
+            # Controller
+            v += dt * (N * (Kd * de - v))  # filtered derivative contribution
+            I += dt * (Ki * e)             # integral
+            u = Kp * e + I + v
+
+            # Apply input delay to plant
+            if dsteps > 0:
+                buf[1:] = buf[:-1]
+                buf[0] = u
+                u_del = buf[-1]
+            else:
+                u_del = u
+
+            # Plant (two 1st-order in series)
+            x1 += dt * ((-x1 + u_del) / T1)
+            x2 += dt * ((-x2 + x1) / T2)
+            y = K * x2
+
+            y_hist[i] = y
+            e_prev = e
+
+        return t, y_hist
+
+    # ------------------------------- Plotting -------------------------------- #
+    def _centered_text(self, ax, x, y, text, **kw):
+        ax.annotate(text, (x, y), xytext=(0, 0), textcoords="offset points",
+                    ha="center", va="center", **kw)
+
+    def plot_analysis(self, t, y, tangent_func, pid_params_dict, system_type='PT2'):
+        """Open-loop step + tangent + Tu/Tg/Ks and derivative panel."""
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
-        
-        # Plot 1: Step response with tangent line
-        ax1.plot(t, y, 'b-', linewidth=2, label='Step Response')
-        
-        # Plot tangent line
-        t_tangent = np.linspace(max(0, self.L - self.tau), self.L + 2*self.tau, 100)
-        y_tangent = tangent_func(t_tangent)
-        ax1.plot(t_tangent, y_tangent, 'r--', linewidth=2, label='Tangent Line')
-        
-        # Mark inflection point
+
+        # Step
+        ax1.plot(t, y, linewidth=2, label='Step Response')
+
+        # Tangent
+        t_tan = np.linspace(max(0, self.L - self.tau), self.L + 2*self.tau, 300)
+        ax1.plot(t_tan, tangent_func(t_tan), '--', linewidth=2, label='Tangent Line')
+
+        # Inflection
         ip = self.inflection_point
-        ax1.plot(ip['t'], ip['y'], 'ro', markersize=8, label=f"Inflection Point ({ip['t']:.2f}, {ip['y']:.2f})")
-        
-        # Mark dead time and time constant
-        if system_type == 'PT2':
-            ax1.axvline(x=self.L, color='g', linestyle=':', label=f'Dead Time L = {self.L:.2f}')
-            ax1.axvline(x=self.L + self.tau, color='orange', linestyle=':', label=f'L + τ = {self.L + self.tau:.2f}')
-            ax1.axhline(y=self.K, color='purple', linestyle=':', alpha=0.7, label=f'Steady State K = {self.K:.2f}')
-        
+        ax1.plot(ip['t'], ip['y'], 'o', markersize=8, label=f'Inflection ({ip["t"]:.2f}, {ip["y"]:.2f})')
+
+        # Tu/Tg/Ks visuals
+        ax1.axvline(self.L, linestyle=':', label=f'Tu = {self.L:.2f}')
+        ax1.axvline(self.L + self.tau, linestyle=':', label=f'Tu+Tg = {self.L + self.tau:.2f}')
+        ax1.axhline(self.K, linestyle=':', alpha=0.8, label=f'Ks = {self.K:.2f}')
+        ax1.axvspan(0, self.L, alpha=0.10)
+        ax1.axvspan(self.L, self.L + self.tau, alpha=0.10)
+        ytxt = 0.05 * (np.nanmax(y) - np.nanmin(y)) + np.nanmin(y)
+        if self.L > 0:
+            self._centered_text(ax1, self.L/2, ytxt, "Tu")
+        self._centered_text(ax1, self.L + self.tau/2, ytxt, "Tg")
+        # Compute tangent values at Tu and Tu+Tg
+        y_Tu = tangent_func(self.L)
+        y_Tg = tangent_func(self.L + self.tau)
+
+        # Draw markers
+        ax1.plot(self.L, y_Tu, 'ks', markersize=8, label='@Tu')
+        ax1.plot(self.L + self.tau, y_Tg, 'ks', markersize=8, label='@Tu+Tg')
+
+        # Annotate
+        ax1.annotate("Tu", (self.L, y_Tu), textcoords="offset points", xytext=(0,10), ha='center')
+        ax1.annotate("Tu+Tg", (self.L + self.tau, y_Tg), textcoords="offset points", xytext=(0,10), ha='center')
+        # <<< END ADD >>>
+
+        # Shaded spans for Tu and Tg
+        ax1.axvspan(0, self.L, alpha=0.10)
+        ax1.axvspan(self.L, self.L + self.tau, alpha=0.10)
+        # Numeric box
+        txt = f"Tu = {self.L:.3f} s\nTg = {self.tau:.3f} s\nKs = {self.K:.3f}"
+        ax1.text(0.98, 0.02, txt, transform=ax1.transAxes,
+                 ha='right', va='bottom', bbox=dict(boxstyle='round', alpha=0.15))
+
         ax1.grid(True, alpha=0.3)
         ax1.set_xlabel('Time [s]')
         ax1.set_ylabel('Output')
-        ax1.set_title(f'{system_type} System Step Response with Wendetangenten Analysis')
-        ax1.legend()
-        
-        # Plot 2: Derivative (slope)
+        ax1.set_title(f'{system_type} Step Response with Wendetangente (Tu, Tg, Ks)')
+        ax1.legend(loc='best')
+
+        # Derivative panel
         dt = t[1] - t[0]
         dy_dt = np.gradient(y, dt)
-        ax2.plot(t, dy_dt, 'b-', linewidth=2, label='dy/dt (Slope)')
-        ax2.axvline(x=ip['t'], color='r', linestyle='--', label=f"Max Slope at t = {ip['t']:.2f}")
-        ax2.plot(ip['t'], ip['slope'], 'ro', markersize=8, label=f"Max Slope = {ip['slope']:.3f}")
-        
+        ax2.plot(t, dy_dt, linewidth=2, label='dy/dt')
+        ax2.axvline(ip['t'], linestyle='--', label=f"Max slope @ t={ip['t']:.2f}")
+        ax2.plot(ip['t'], ip['slope'], 'o', label=f"Max slope = {ip['slope']:.3f}")
         ax2.grid(True, alpha=0.3)
         ax2.set_xlabel('Time [s]')
         ax2.set_ylabel('Slope')
         ax2.set_title('Step Response Derivative')
-        ax2.legend()
-        
+        ax2.legend(loc='best')
+
         plt.tight_layout()
-        
-        # Print results
-        print("=== Wendetangenten Analysis Results ===")
-        print(f"System Type: {system_type}")
-        print(f"Process Gain (K): {self.K:.4f}")
-        print(f"Dead Time (L): {self.L:.4f} s")
-        print(f"Time Constant (τ): {self.tau:.4f} s")
-        print(f"Inflection Point: t = {ip['t']:.4f} s, y = {ip['y']:.4f}")
-        print(f"Maximum Slope: {ip['slope']:.4f}")
-        print()
-        print("=== PID Parameters (Using Official Formulas) ===")
-        for method, params in pid_params.items():
-            print(f"{method}:")
-            print(f"  Kp = {params['Kp']:.4f}")
-            print(f"  Ki = {params['Ki']:.4f}")
-            print(f"  Kd = {params['Kd']:.4f}")
-            print(f"  TN (Ti) = {params['TN']:.4f} s")
-            print(f"  TV (Td) = {params['TV']:.4f} s")
-            print()
-        
         return fig
 
+    def plot_closed_loop_comparison(self, K, T1, T2, deadtime, pid_params_dict,
+                                    T_end=30.0, dt=0.002, N=20.0):
+        """Overlay closed-loop steps for ZN & CHR using explicit delay simulation."""
+        fig, ax = plt.subplots(figsize=(12, 5))
+        for name, p in pid_params_dict.items():
+            tt, yy = self.simulate_closed_loop_td(
+                K, T1, T2, deadtime,
+                p['Kp'], p['Ki'], p['Kd'],
+                N=N, T_end=T_end, dt=dt
+            )
+            ax.plot(tt, yy, linewidth=2,
+                    label=f"{name}  (Kp={p['Kp']:.3g}, Ki={p['Ki']:.3g}, Kd={p['Kd']:.3g})")
+
+        ax.grid(True, alpha=0.3)
+        ax.set_xlabel('Time [s]')
+        ax.set_ylabel('y(t)')
+        ax.axhline(1.0, color='k', alpha=0.2)  # reference line
+        ax.set_title('Closed-Loop Step Responses (ZN & CHR) — explicit delay (no Padé)')
+        ax.legend(loc='best')
+        plt.tight_layout()
+        return fig
+
+
+# ------------------------------------ Demo ----------------------------------- #
 def main():
-    # Example usage
     tuner = ZieglerNicholsTuner()
-    
-    # Example 1: PT2 System
-    print("=== PT2 System Example ===")
-    K, T1, T2, deadtime = 2.0, 5.0, 2.0, 1.0
-    
-    # Create system and simulate
+
+    # ---------- Example: PT2 plant ----------
+    K, T1, T2, deadtime = 1.0, 2.0, 4.0, 0.0
+
+    # Open-loop step (for Wendetangente extraction)
     sys_pt2 = tuner.create_pt2_system(K, T1, T2, deadtime)
-    t, y = tuner.simulate_step_response(sys_pt2, t_final=30)
-    
-    # Apply Wendetangenten method
+    t, y = tuner.simulate_step_response(sys_pt2, t_final=30.0, n_points=2000)
+
+    # Wendetangente
     tuner.find_inflection_point(t, y)
-    tangent_func = tuner.fit_tangent_line(t, y)
-    tuner.extract_wendetangenten_parameters(t, y, 'PT2')
-    
-    # Calculate PID parameters with different methods
-    pid_params = {
-        'Ziegler-Nichols (Method 2)': tuner.calculate_pid_parameters('ZN'),
-        'CHR Aperiodic (0% Overshoot)': tuner.calculate_pid_parameters('CHR_aperiodic'),
-        'CHR 20% Overshoot': tuner.calculate_pid_parameters('CHR_20')
+    tan = tuner.fit_tangent_line(t, y)
+    Tu, Tg, Ks = tuner.extract_wendetangenten_parameters(t, y, 'PT2')
+
+    # PID parameter sets
+    pid_sets = {
+        'Ziegler-Nichols': tuner.calculate_pid_parameters('ZN'),
+        'CHR aperiodic (0%)': tuner.calculate_pid_parameters('CHR_aperiodic'),
+        'CHR 20% overshoot': tuner.calculate_pid_parameters('CHR_20'),
     }
-    
-    # Plot results
-    fig1 = tuner.plot_analysis(t, y, tangent_func, pid_params, 'PT2')
+
+    # Plots
+    tuner.plot_analysis(t, y, tan, pid_sets, 'PT2')
+    tuner.plot_closed_loop_comparison(K, T1, T2, deadtime, pid_sets,
+                                      T_end=30.0, dt=0.002, N=20.0)
     plt.show()
-    
-    # Example 2: IT1 System
-    print("\n" + "="*50)
-    print("=== IT1 (Integrating) System Example ===")
-    tuner2 = ZieglerNicholsTuner()
-    
-    K_int, T1_int, deadtime_int = 1.0, 3.0, 0.5
-    
-    # Create integrating system and simulate
-    sys_it1 = tuner2.create_it1_system(K_int, T1_int, deadtime_int)
-    t2, y2 = tuner2.simulate_step_response(sys_it1, t_final=20)
-    
-    # Apply Wendetangenten method for integrating system
-    tuner2.find_inflection_point(t2, y2)
-    tangent_func2 = tuner2.fit_tangent_line(t2, y2)
-    tuner2.extract_wendetangenten_parameters(t2, y2, 'IT1')
-    
-    # For integrating systems, use conservative tuning
-    pid_params2 = {
-        'Modified ZN (IT1)': tuner2.calculate_pid_parameters('ZN')
-    }
-    
-    # Plot results
-    fig2 = tuner2.plot_analysis(t2, y2, tangent_func2, pid_params2, 'IT1')
-    plt.show()
+
 
 if __name__ == "__main__":
     main()
