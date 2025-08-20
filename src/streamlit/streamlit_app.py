@@ -418,6 +418,13 @@ if mode == "🔍 Predict PID":
                 # control library
                 from control.matlab import tf, feedback, step as step_response
                 from control import pade
+                from utils.Wendetangente import ZieglerNicholsTuner
+                import matplotlib.pyplot as plt
+                from scipy import signal
+                import warnings
+                warnings.filterwarnings('ignore')
+                tuner = ZieglerNicholsTuner()
+
                 # ---------- Plant per Family ----------
                 def plant_tf(Family, K, T1, T2, w0, zeta, Tchar, L):
                     """
@@ -479,44 +486,137 @@ if mode == "🔍 Predict PID":
                 def _safe_div(x, eps=1e-9): 
                     return x if abs(x) > eps else (eps if x >= 0 else -eps)
 
-                def zn_pid(K, T1, T2, L):
-                    # ZN for FOPDT-ish: use T = T1+T2; requires L>0
-                    T = T1 + T2 if T2 > 0 else T1
-                    Ls = _safe_div(L)
-                    Kp = 1.2 * T / _safe_div(K * Ls)
-                    Ti = 2.0 * Ls
-                    Td = 0.5 * Ls
-                    Ki = Kp / _safe_div(Ti)
-                    Kd = Kp * Td
-                    return Kp, Ki, Kd
+                def _build_open_loop_sys_for_wende(Family: str, K: float, T1: float, T2: float,
+                                                Td: float, w0: float, zeta: float):
+                    """
+                    Create an open-loop TransferFunction (scipy.signal) + deadtime for Wendetangente.
+                    Returns (sys, deadtime_seconds).
+                    """
+                    # PT1/PT2_existing
+                    if Family == "PT1PT2_existing":
+                        den = np.convolve([T1, 1.0], [T2, 1.0]) if T2 > 0 else [T1, 1.0]
+                        sys = signal.TransferFunction([K], den)
+                        return (sys, float(max(0.0, Td)))
 
-                def chr_pid(K, T1, T2, L, overshoot=0):
-                    # CHR for FOPDT-ish; requires L>0
-                    T = T1 + T2 if T2 > 0 else T1
-                    Ls = _safe_div(L)
-                    if overshoot == 0:
-                        Kp = 0.6 * T / _safe_div(K * Ls)
-                        Ti = 1.0 * Ls
-                        Td = 0.5 * Ls
-                    else:
-                        Kp = 0.95 * T / _safe_div(K * Ls)
-                        Ti = 1.35 * Ls
-                        Td = 0.47 * Ls
-                    Ki = Kp / _safe_div(Ti)
-                    Kd = Kp * Td
-                    return Kp, Ki, Kd
+                    # IT1
+                    if Family == "IT1":
+                        # G(s) = K / (s * (T1 s + 1)) -> den = [T1, 1, 0]
+                        sys = signal.TransferFunction([K], [T1, 1.0, 0.0])
+                        return (sys, float(max(0.0, Td)))
+
+                    # Oscillatory second-order (underdamped)
+                    if Family == "PT2_osc":
+                        # G(s) = K*w0^2 / (s^2 + 2*zeta*w0*s + w0^2)
+                        w0 = float(max(w0, 1e-9))
+                        sys = signal.TransferFunction([K * (w0**2)], [1.0, 2.0*zeta*w0, w0**2])
+                        return (sys, float(max(0.0, Td)))
+
+                    # Pure gain – Wendetangente is not meaningful here (no dynamics)
+                    if Family == "P":
+                        sys = signal.TransferFunction([K], [1.0])
+                        return (sys, float(max(0.0, Td)))
+
+                    # Fallback: treat like PT1
+                    den = [T1, 1.0]
+                    sys = signal.TransferFunction([K], den)
+                    return (sys, float(max(0.0, Td)))
+
+
+                def compute_pid_sets_via_wendetangente(Family: str, *, 
+                                                    K: float, T1: float, T2: float, Td: float,
+                                                    w0: float, zeta: float,
+                                                    t_final: float = 50.0, n_points: int = 2000):
+                    """
+                    Uses your Wendetangente methods to extract Tu, Tg, Ks from the open-loop step
+                    and returns PID parameter sets for ZN and CHR.
+                    """
+                    tuner = ZieglerNicholsTuner()
+
+                    # Build open-loop TF and simulate step with explicit deadtime shift
+                    sys_tuple = _build_open_loop_sys_for_wende(Family, K, T1, T2, Td, w0, zeta)
+                    t_ol, y_ol = tuner.simulate_step_response(sys_tuple, t_final=float(t_final), n_points=int(n_points))
+
+                    # Extract Tu, Tg, Ks via Wendetangente
+                    tuner.find_inflection_point(t_ol, y_ol)
+                    tangent_fun = tuner.fit_tangent_line(t_ol, y_ol)
+                    Tu, Tg, Ks = tuner.extract_wendetangenten_parameters(t_ol, y_ol, system_type=Family)
+
+                    # Compute PID parameter sets from Tu/Tg/Ks
+                    pid_sets = {
+                        "ZN":          tuner.calculate_pid_parameters("ZN"),
+                        "CHR 0%":      tuner.calculate_pid_parameters("CHR_aperiodic"),
+                        "CHR 20%":     tuner.calculate_pid_parameters("CHR_20"),
+                    }
+
+                    return {
+                        "t_open": t_ol, "y_open": y_ol,
+                        "tangent": tangent_fun,
+                        "Tu": Tu, "Tg": Tg, "Ks": Ks,
+                        "pid_sets": pid_sets,
+                        "tuner": tuner,  # to reuse its plotting helpers if desired
+                    }
 
                 # === Use Predicted PID ===
                 L = Td  # clarity
                 Kp_ml, Ki_ml, Kd_ml = Kp, Ki, Kd
 
                 # Baselines only for FOPDT-like families with L>0 and T1>0
-                baselines = {}
-                if Family in {"PT1PT2_existing"} and (L > 0.0) and (T1 > 0.0):
-                    baselines["ZN"]      = zn_pid(K, T1, T2, L)
-                    baselines["CHR 0%"]  = chr_pid(K, T1, T2, L, overshoot=0)
-                    baselines["CHR 20%"] = chr_pid(K, T1, T2, L, overshoot=20)
+                #baselines = {}
+                #if Family in {"PT1PT2_existing"} and (L > 0.0) and (T1 > 0.0):
+                    #baselines["ZN"]      = zn_pid(K, T1, T2, L)
+                    #baselines["CHR 0%"]  = chr_pid(K, T1, T2, L, overshoot=0)
+                    #baselines["CHR 20%"] = chr_pid(K, T1, T2, L, overshoot=20)
                 # For PT2_osc / IT1 / P we intentionally skip ZN/CHR (not meaningful)
+                # --- NEW: Wendetangente-based ZN / CHR from open-loop step ---
+                baselines = {}
+                try:
+                    wende = compute_pid_sets_via_wendetangente(
+                        Family=Family,
+                        K=float(K), T1=float(T1), T2=float(T2), Td=float(L),
+                        w0=float(w0), zeta=float(zeta),
+                        t_final=float(t_max), n_points=2000,
+                    )
+                    # Collect as (Kp, Ki, Kd)
+                    for label, params in wende["pid_sets"].items():
+                        baselines[label] = (params["Kp"], params["Ki"], params["Kd"])
+
+                    # (Optional) details box
+                    with st.expander("🧭 Wendetangente (Tu, Tg, Ks) & PID from step"):
+                        st.write(
+                            f"Tu = **{wende['Tu']:.3f} s**,  Tg = **{wende['Tg']:.3f} s**,  Ks = **{wende['Ks']:.3f}**"
+                        )
+                        st.code(
+                            "\n".join([
+                                "=== Ziegler–Nichols ===",
+                                f"Kp = {wende['pid_sets']['ZN']['Kp']:.6f}",
+                                f"Ki = {wende['pid_sets']['ZN']['Ki']:.6f}",
+                                f"Kd = {wende['pid_sets']['ZN']['Kd']:.6f}",
+                                "",
+                                "=== CHR (0% OS) ===",
+                                f"Kp = {wende['pid_sets']['CHR 0%']['Kp']:.6f}",
+                                f"Ki = {wende['pid_sets']['CHR 0%']['Ki']:.6f}",
+                                f"Kd = {wende['pid_sets']['CHR 0%']['Kd']:.6f}",
+                                "",
+                                "=== CHR (20% OS) ===",
+                                f"Kp = {wende['pid_sets']['CHR 20%']['Kp']:.6f}",
+                                f"Ki = {wende['pid_sets']['CHR 20%']['Ki']:.6f}",
+                                f"Kd = {wende['pid_sets']['CHR 20%']['Kd']:.6f}",
+                            ]),
+                            language="text"
+                        )
+
+                        # Optional: show the open-loop step + tangent + Tu/Tg/Ks using your class' plot
+                        try:
+                            fig_wende = wende["tuner"].plot_analysis(
+                                wende["t_open"], wende["y_open"], wende["tangent"],
+                                wende["pid_sets"], system_type=Family
+                            )
+                            st.pyplot(fig_wende, use_container_width=True)
+                        except Exception as _:
+                            st.info("Open-loop Wendetangente plot skipped.")
+
+                except Exception as ex:
+                    st.warning(f"Wendetangente PID baseline unavailable: {ex}")
 
                 # === Simulate ===
                 t_ml, y_ml = simulate_response(Family, K, T1, T2, L, w0, zeta, Tchar, Kp_ml, Ki_ml, Kd_ml, T_final=t_max)
@@ -1783,3 +1883,123 @@ elif mode == "🧪 Simulink Validation":
             except Exception as e:
                 st.error(f"❌ Simulation failed:\n{e}")
 
+# === Groq API setup ===
+client = OpenAI(
+    api_key=st.secrets["GROQ_API_KEY"],
+    base_url="https://api.groq.com/openai/v1"
+)
+model_name = "llama3-8b-8192"
+
+# === Session State ===
+if "floating_chat_history" not in st.session_state:
+    st.session_state.floating_chat_history = [
+        {"role": "system", "content": "You are a helpful assistant for PID tuning and ML optimization."}
+    ]
+
+# === Floating Chat Button and Box HTML/CSS ===
+floating_chat_html = """
+<style>
+#floatingChatBtn {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: #5e81ac;
+    color: white;
+    border: none;
+    padding: 12px 16px;
+    border-radius: 20px;
+    font-size: 16px;
+    z-index: 10000;
+    cursor: pointer;
+}
+#floatingChatBox {
+    display: none;
+    position: fixed;
+    bottom: 70px;
+    right: 20px;
+    width: 340px;
+    max-height: 480px;
+    background-color: #1e293b;
+    color: white;
+    border-radius: 10px;
+    padding: 15px;
+    overflow-y: auto;
+    z-index: 9999;
+}
+</style>
+
+<button id="floatingChatBtn" onclick="toggleChat()">💬 Ask AI</button>
+<div id="floatingChatBox">
+    <p><strong>🤖 AI Assistant</strong></p>
+    <div id="chatHistory">You can ask about PID tuning, optimization, etc.</div>
+</div>
+
+<script>
+function toggleChat() {
+    var chatBox = document.getElementById("floatingChatBox");
+    if (chatBox.style.display === "none" || chatBox.style.display === "") {
+        chatBox.style.display = "block";
+    } else {
+        chatBox.style.display = "none";
+    }
+}
+</script>
+"""
+
+# === Chat Session State ===
+if "floating_chat_history" not in st.session_state:
+    st.session_state.floating_chat_history = [
+        {"role": "system", "content": "You are a professional assistant embedded in a Bachelor thesis tool for optimizing PID controller parameters using machine learning."
+    "Your answers should be concise, technically sound, and suitable for an academic or engineering audience (e.g., professors, recruiters). "
+    "Explain concepts from control theory and machine learning clearly and accurately. Focus on key topics like PID tuning, surrogate models, performance metrics (ISE, overshoot, settling time), and the benefits of data-driven methods over classical techniques like Ziegler-Nichols or CHR. "
+    "Respond in a structured, professional tone. Use Markdown for equations or formatting when helpful."}
+    ]
+
+# === Initialize Chat History (Session State) ===
+if "floating_chat_history" not in st.session_state:
+    st.session_state.floating_chat_history = [
+        {"role": "system", "content": (
+            "You are a professional AI assistant specialized in control theory and machine learning. "
+            "Answer briefly and clearly, suitable for academic and engineering use. "
+            "The user is working on a bachelor's thesis about 'Machine Learning-Based Optimization of PID Controller Parameters'. "
+            "Explain concepts like ISE, surrogate modeling, and PID tuning in a concise, academic tone."
+        )}
+    ]
+
+# === Floating Chat UI Block ===
+# === Ask the AI Assistant UI ===
+with st.container(border=True):
+    st.markdown("### 🤖 Ask the AI Assistant")
+    st.caption("Ask about PID control, optimization, surrogate models, etc.")
+    
+    # Show previous messages
+    if len(st.session_state.floating_chat_history) > 1:
+        for msg in st.session_state.floating_chat_history[1:]:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+    
+    # === Input form
+    with st.form("chat_input_form"):
+        user_input = st.text_input("Your question:", key="chat_input")
+        submitted = st.form_submit_button("Send")
+    
+    # === Process immediately when form is submitted ===
+    if submitted and user_input.strip():
+        question = user_input.strip()
+        st.session_state.floating_chat_history.append({"role": "user", "content": question})
+        
+        with st.spinner("💬 Thinking..."):
+            client = OpenAI(
+                api_key=st.secrets["GROQ_API_KEY"],
+                base_url="https://api.groq.com/openai/v1"
+            )
+            response = client.chat.completions.create(
+                model="llama3-8b-8192",
+                messages=st.session_state.floating_chat_history,
+                temperature=0.5
+            )
+            reply = response.choices[0].message.content.strip()
+            st.session_state.floating_chat_history.append({"role": "assistant", "content": reply})
+        
+        # Force rerun to show the new messages
+        st.rerun()
