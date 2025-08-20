@@ -97,8 +97,8 @@ def optimize_pid_for_system(K, T1, T2, T_d, model_choice, weights, constraints):
                     std = pred_dist.stddev.item()
 
                     if "log" in metric:
-                        #mean = np.exp(mean)
-                        mean = mean
+                        mean = np.exp(mean)
+                        #mean = mean
                         # Approximate std for exp-transformed variables (delta method)
                         std = mean * std
 
@@ -216,7 +216,7 @@ def optimize_pid_for_system(K, T1, T2, T_d, model_choice, weights, constraints):
             return float('inf')
 
     # Define PID parameter bounds
-    bounds = [(0.1, 20.0), (0.0, 20.0), (0.0, 20.0)]
+    bounds = [(0.1, 10.0), (0.0, 5.0), (0.0, 5.0)]
     print("🚀 Starting differential_evolution optimization")
     print(f"📊 Bounds: {bounds}")
 
