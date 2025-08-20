@@ -49,7 +49,17 @@ TARGETS = ["Kp", "Ki", "Kd"]
 print(f"Loading: {DATA_PATH}")
 df = pd.read_csv(DATA_PATH)
 print("Loaded shape:", df.shape)
-
+df = df[df["ISE"] < 5]
+df = df[df["ISE"] > 0.001]
+df = df[df["SettlingTime"] < 50]
+df = df[df["RiseTime"] < 30]
+df = df[df["SettlingTime"] > 0.01000]
+df = df[df["RiseTime"] > 0.01000]
+df = df[df["Overshoot"] < 40]
+df = df[df["Kp"] < 20 ]
+df = df[df["Kp"] > 0.3 ]
+df = df[df["Ki"] < 20]
+df = df[df["Kd"] < 20]
 # Ensure required raw columns exist (extended CSV should have these)
 for c in ["K", "L", "T1", "T2", "w0", "zeta", "Tchar",  "Family"]:
     if c not in df.columns:
