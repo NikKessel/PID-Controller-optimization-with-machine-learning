@@ -1102,13 +1102,13 @@ elif mode == "⚙️ Optimize PID":
     with c1:
         max_ise = st.number_input("Max ISE", min_value=0.0, max_value=100.0, value=25.0)
         max_st = st.number_input("Max Settling Time", min_value=0.0, max_value=300.0, value=100.0)
-        max_sse = st.number_input("Max SSE", min_value=0.0, max_value=1.0, value=0.5)
+        max_sse = st.number_input("Max SSE", min_value=0.0, max_value=10.0, value=0.5)
     with c2:
         max_os = st.number_input("Max Overshoot (%)", min_value=0.0, max_value=100.0, value=50.0)
         max_rt = st.number_input("Max Rise Time", min_value=0.0, max_value=200.0, value=50.0)
 
     st.sidebar.markdown("**Plant Parameter**")
-    K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=4.5)
+    K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=20.0, value=4.5)
     T1 = st.sidebar.number_input("T1", min_value=1.0, max_value=50.0, value=10.0)
     T2 = st.sidebar.number_input("T2", min_value=0.0, max_value=50.0, value=3.0)
     Td = st.sidebar.number_input("Td (Dead Time)", min_value=0.0, max_value=5.0, value=0.6)
