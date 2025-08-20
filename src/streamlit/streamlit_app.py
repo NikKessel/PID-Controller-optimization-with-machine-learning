@@ -1616,6 +1616,7 @@ elif mode == "⚙️ Optimize PID":
                         continue
 
 
+
                     sim = None
                     try:
                         sim = simulate_true_metrics(Kp_i, Ki_i, Kd_i)
@@ -1625,8 +1626,14 @@ elif mode == "⚙️ Optimize PID":
                     if sim is None:
                         dbg["sim_failed"] += 1
                         if len(rejected_samples) < MAX_REJECT_SAMPLES:
-                            rejected_samples.append({"idx": idx, "Kp": Kp_i, "Ki": Ki_i, "Kd": Kd_i, "reason": "sim_failed/unstable"})
-                        continue  # unstable or failed sim
+                            rejected_samples.append({
+                                "idx": idx,
+                                "Kp": Kp_i, "Ki": Ki_i, "Kd": Kd_i,
+                                "ISE_sim": np.nan, "SSE_sim": np.nan, "Overshoot_sim": np.nan,
+                                "reason": "sim_failed/unstable"
+                            })
+                        continue
+
 
                     violates, reasons = check_constraints(sim, constraints)
                     if violates:
@@ -1645,7 +1652,11 @@ elif mode == "⚙️ Optimize PID":
 
                         if len(rejected_samples) < MAX_REJECT_SAMPLES:
                             rejected_samples.append({
-                                "idx": idx, "Kp": Kp_i, "Ki": Ki_i, "Kd": Kd_i,
+                                "idx": idx,
+                                "Kp": Kp_i, "Ki": Ki_i, "Kd": Kd_i,
+                                "ISE_sim": sim.get("ISE_sim", np.nan),
+                                "SSE_sim": sim.get("SSE_sim", np.nan),
+                                "Overshoot_sim": sim.get("Overshoot_sim", np.nan),
                                 "reason": ",".join(reasons)
                             })
                         continue
