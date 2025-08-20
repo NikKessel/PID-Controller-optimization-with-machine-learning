@@ -1541,7 +1541,7 @@ elif mode == "⚙️ Optimize PID":
 
                 # --- Phase 1: simulate until we have up to 50 feasible, stable items ---
                 simulated_rows = []
-                MAX_SIM = 50
+                MAX_SIM = 500
                 for idx, row in raw_df.iterrows():
                     # pull Kp,Ki,Kd from evaluated list (predicted candidates)
                     try:
