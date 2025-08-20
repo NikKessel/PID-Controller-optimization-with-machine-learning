@@ -1730,6 +1730,26 @@ elif mode == "⚙️ Optimize PID":
                 for c in ["ISE_sim","Overshoot_sim","SettlingTime_sim","RiseTime_sim","SSE_sim","Cost_true"]:
                     if c in top5_df.columns:
                         top5_df[c] = pd.to_numeric(top5_df[c], errors="coerce").round(3)
+                with st.expander("🔎 Debug summary (why fewer than 5?)", expanded=False):
+                    st.markdown(f"""
+                - Raw candidates: **{dbg['raw_candidates']}**
+                - Accepted after sim & constraints: **{dbg['accepted']}** (capped: {dbg['cap_reached']})
+                - Rejected due to simulation/unstable: **{dbg['sim_failed']}**
+                - Rejected by constraints:
+                - ISE>max: **{dbg['constraint_ISE']}**
+                - OS>max: **{dbg['constraint_OS']}**
+                - ST>max: **{dbg['constraint_ST']}**
+                - RT>max: **{dbg['constraint_RT']}**
+                - SSE>max: **{dbg['constraint_SSE']}**
+                - Other (null/≤0): **{dbg['constraint_other']}**
+                - Rejected due to non-finite cost: **{dbg['nonfinite_cost']}**
+                - Removed by uniqueness radius (MIN_DELTA={MIN_DELTA}): **{dbg['unique_filtered']}**
+                - Picked for Top-5: **{len(top5_df)}**
+                """)
+                    if rejected_samples:
+                        st.caption("Sample of rejected candidates and reasons:")
+                        st.dataframe(pd.DataFrame(rejected_samples))
+
 
                 st.markdown("#### 🏆 Top 5 Distinct PID Controllers (sorted by **simulated** cost)")
                 display_cols = [
