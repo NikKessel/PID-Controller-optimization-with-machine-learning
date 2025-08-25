@@ -117,10 +117,10 @@ if mode == "🔍 Predict PID":
         st.session_state.predict_clicked = False
 
     st.sidebar.markdown("**System Parameters**")
-    K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=5.0)
-    T1 = st.sidebar.number_input("T1", min_value=0.0, max_value=50.0, value=2.0)
-    T2 = st.sidebar.number_input("T2", min_value=0.0, max_value=50.0, value=1.00)
-    Td = st.sidebar.number_input("Td", min_value=0.0, max_value=5.0, value=0.0) 
+    K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=100.0, value=5.0)
+    T1 = st.sidebar.number_input("T1", min_value=0.0, max_value=500.0, value=2.0)
+    T2 = st.sidebar.number_input("T2", min_value=0.0, max_value=500.0, value=1.00)
+    Td = st.sidebar.number_input("Td", min_value=0.0, max_value=50.0, value=0.0) 
     w0 = st.sidebar.number_input("w0", min_value=0.0, max_value=10.0, value=0.0)
     zeta = st.sidebar.number_input("zeta", min_value=0.0, max_value=1.0, value=0.0)
     Tchar = st.sidebar.number_input("Tchar", min_value=0.0, max_value=50.0, value=0.0)
