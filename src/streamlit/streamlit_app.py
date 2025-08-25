@@ -781,9 +781,9 @@ elif mode == "📊 Evaluate PID":
 )
     
     # === User Inputs ===
-    K = st.number_input("K (Gain)", min_value=0.1, max_value=10.0, value=1.0)
-    T1 = st.number_input("T1 (Time Constant in s)", min_value=1.0, max_value=50.0, value=20.0)
-    T2 = st.number_input("T2 (2nd Time Constant in s)", min_value=0.0, max_value=50.0, value=10.0)
+    K = st.number_input("K (Gain)", min_value=0.1, max_value=100.0, value=1.0)
+    T1 = st.number_input("T1 (Time Constant in s)", min_value=1.0, max_value=500.0, value=20.0)
+    T2 = st.number_input("T2 (2nd Time Constant in s)", min_value=0.0, max_value=500.0, value=10.0)
     Td = st.number_input("Td (Dead Time in s)", min_value=0.0, max_value=5.0, value=1.0)
 
     Kp = st.number_input("Kp", min_value=0.0, max_value=10.0, value=2.0)
@@ -1108,9 +1108,9 @@ elif mode == "⚙️ Optimize PID":
         max_rt = st.number_input("Max Rise Time", min_value=0.0, max_value=200.0, value=50.0)
 
     st.sidebar.markdown("**Plant Parameter**")
-    K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=20.0, value=4.5)
-    T1 = st.sidebar.number_input("T1", min_value=1.0, max_value=50.0, value=10.0)
-    T2 = st.sidebar.number_input("T2", min_value=0.0, max_value=50.0, value=3.0)
+    K = st.sidebar.number_input("K (Gain)", min_value=0.1, max_value=100.0, value=4.5)
+    T1 = st.sidebar.number_input("T1", min_value=1.0, max_value=500.0, value=10.0)
+    T2 = st.sidebar.number_input("T2", min_value=0.0, max_value=500.0, value=3.0)
     Td = st.sidebar.number_input("Td (Dead Time)", min_value=0.0, max_value=5.0, value=0.6)
     
     def satisfies_constraints(ctrl, constraints):
