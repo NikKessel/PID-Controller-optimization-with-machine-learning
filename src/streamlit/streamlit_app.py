@@ -128,7 +128,7 @@ if mode == "🔍 Predict PID":
 
     st.sidebar.markdown("**Plot Settings**")
     t_max = st.sidebar.slider("Simulation Time [s]", 1, 300, 20, key="slider_t_max")
-    y_max = st.sidebar.slider("Y-Axis Max (Output)", 1.0, 50000.0, 1.5, step=0.1, key="slider_y_max")
+    y_max = st.sidebar.slider("Y-Axis Max (Output)", 1.0, 10.0, 1.5, step=0.1, key="slider_y_max")
 
 
     if st.button("🔍 Predict PID"):
