@@ -2018,21 +2018,30 @@ elif mode == "🧪 Simulink Validation":
             except Exception as e:
                 st.error(f"❌ Simulation failed:\n{e}")
 
-# === Groq API setup ===
+
+# === Groq API Setup ===
 client = OpenAI(
     api_key=st.secrets["GROQ_API_KEY"],
     base_url="https://api.groq.com/openai/v1"
 )
 model_name = "llama3-8b-8192"
 
-# === Session State ===
+# === Session State Initialization ===
 if "floating_chat_history" not in st.session_state:
     st.session_state.floating_chat_history = [
-        {"role": "system", "content": "You are a helpful assistant for PID tuning and ML optimization."}
+        {
+            "role": "system",
+            "content": (
+                "You are a professional AI assistant specialized in control theory and machine learning. "
+                "Answer briefly and clearly, suitable for academic and engineering use. "
+                "The user is working on a bachelor's thesis about 'Machine Learning-Based Optimization of PID Controller Parameters'. "
+                "Explain concepts like ISE, surrogate modeling, and PID tuning in a concise, academic tone."
+            )
+        }
     ]
 
-# === Floating Chat Button and Box HTML/CSS ===
-floating_chat_html = """
+# === Floating Chat HTML/CSS ===
+st.markdown("""
 <style>
 #floatingChatBtn {
     position: fixed;
@@ -2072,69 +2081,43 @@ floating_chat_html = """
 <script>
 function toggleChat() {
     var chatBox = document.getElementById("floatingChatBox");
-    if (chatBox.style.display === "none" || chatBox.style.display === "") {
-        chatBox.style.display = "block";
-    } else {
-        chatBox.style.display = "none";
-    }
+    chatBox.style.display = (chatBox.style.display === "none" || chatBox.style.display === "") ? "block" : "none";
 }
 </script>
-"""
+""", unsafe_allow_html=True)
 
-# === Chat Session State ===
-if "floating_chat_history" not in st.session_state:
-    st.session_state.floating_chat_history = [
-        {"role": "system", "content": "You are a professional assistant embedded in a Bachelor thesis tool for optimizing PID controller parameters using machine learning."
-    "Your answers should be concise, technically sound, and suitable for an academic or engineering audience (e.g., professors, recruiters). "
-    "Explain concepts from control theory and machine learning clearly and accurately. Focus on key topics like PID tuning, surrogate models, performance metrics (ISE, overshoot, settling time), and the benefits of data-driven methods over classical techniques like Ziegler-Nichols or CHR. "
-    "Respond in a structured, professional tone. Use Markdown for equations or formatting when helpful."}
-    ]
+# === Chat Interface ===
+st.markdown("### 🤖 Ask the AI Assistant")
+st.caption("Ask about PID control, optimization, surrogate models, etc.")
 
-# === Initialize Chat History (Session State) ===
-if "floating_chat_history" not in st.session_state:
-    st.session_state.floating_chat_history = [
-        {"role": "system", "content": (
-            "You are a professional AI assistant specialized in control theory and machine learning. "
-            "Answer briefly and clearly, suitable for academic and engineering use. "
-            "The user is working on a bachelor's thesis about 'Machine Learning-Based Optimization of PID Controller Parameters'. "
-            "Explain concepts like ISE, surrogate modeling, and PID tuning in a concise, academic tone."
-        )}
-    ]
+# Display previous messages
+for msg in st.session_state.floating_chat_history[1:]:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
-# === Floating Chat UI Block ===
-# === Ask the AI Assistant UI ===
-with st.container(border=True):
-    st.markdown("### 🤖 Ask the AI Assistant")
-    st.caption("Ask about PID control, optimization, surrogate models, etc.")
-    
-    # Show previous messages
-    if len(st.session_state.floating_chat_history) > 1:
-        for msg in st.session_state.floating_chat_history[1:]:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
-    
-    # === Input form
-    with st.form("chat_input_form"):
-        user_input = st.text_input("Your question:", key="chat_input")
-        submitted = st.form_submit_button("Send")
-    
-    # === Process immediately when form is submitted ===
-    if submitted and user_input.strip():
-        question = user_input.strip()
-        st.session_state.floating_chat_history.append({"role": "user", "content": question})
-        
-        with st.spinner("💬 Thinking..."):
-            client = OpenAI(
-                api_key=st.secrets["GROQ_API_KEY"],
-                base_url="https://api.groq.com/openai/v1"
-            )
+# Input form
+with st.form("chat_input_form"):
+    user_input = st.text_input("Your question:", key="chat_input")
+    submitted = st.form_submit_button("Send")
+
+if submitted and user_input.strip():
+    question = user_input.strip()
+    st.session_state.floating_chat_history.append({"role": "user", "content": question})
+
+    with st.spinner("💬 Thinking..."):
+        # Limit history to last 10 messages to avoid payload errors
+        messages_to_send = st.session_state.floating_chat_history[-10:]
+
+        try:
             response = client.chat.completions.create(
-                model="llama3-8b-8192",
-                messages=st.session_state.floating_chat_history,
+                model=model_name,
+                messages=messages_to_send,
                 temperature=0.5
             )
             reply = response.choices[0].message.content.strip()
-            st.session_state.floating_chat_history.append({"role": "assistant", "content": reply})
-        
-        # Force rerun to show the new messages
-        st.rerun()
+        except Exception as e:
+            reply = f"⚠️ Error communicating with API: {e}"
+
+        st.session_state.floating_chat_history.append({"role": "assistant", "content": reply})
+
+    st.rerun()
