@@ -6,8 +6,8 @@ import numpy as np
 import os
 
 def run_simulink_simulation(K, T1, T2, Kp, Ki, Kd,
-                             input_file='C:/Users/KesselN/Documents/GitHub/PID-Controller-optimization-with-machine-learning/src/data/input.mat',
-                             output_file='C:/Users/KesselN/Documents/GitHub/PID-Controller-optimization-with-machine-learning/src/data/results.mat',
+                             input_file='D:\BA\PID-Controller-optimization-with-machine-learning/src/data/input.mat',
+                             output_file='D:\BA\PID-Controller-optimization-with-machine-learning/src/data/results.mat',
                              matlab_script='simulate_and_export'):
 
     from scipy.io import savemat, loadmat
@@ -27,7 +27,7 @@ def run_simulink_simulation(K, T1, T2, Kp, Ki, Kd,
         subprocess.run([
             "matlab",
             "-batch",
-            "cd('C:/Users/KesselN/Documents/GitHub/PID-Controller-optimization-with-machine-learning/src/data'); simulate_and_export"
+            "cd('D:\BA\PID-Controller-optimization-with-machine-learning/src/data'); simulate_and_export"
         ], check=True)
 
     except subprocess.CalledProcessError as e:
